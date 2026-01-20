@@ -46,6 +46,7 @@ class ScrollEndDetector:
                 extra={"color": f"{Fore.BLUE}"},
             )
             return True
+        return False
 
     def is_fling_limit_reached(self):
         if (

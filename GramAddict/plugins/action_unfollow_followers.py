@@ -360,7 +360,17 @@ class ActionUnfollowFollowers(Plugin):
         total_unfollows_limit_reached = False
         prev_screen_iterated_followings = []
         tried_categories = []  # Track which categories we've already tried
+        consecutive_same_screen_count = 0  # Track consecutive iterations with same users
+        max_iterations = 500  # Safety limit to prevent infinite loops
+        iteration_count = 0
         while True:
+            iteration_count += 1
+            if iteration_count > max_iterations:
+                logger.warning(
+                    f"Reached maximum iterations ({max_iterations}). Stopping to prevent infinite loop.",
+                    extra={"color": f"{Fore.YELLOW}"},
+                )
+                return
             posts_end_detector.notify_new_page()
             screen_iterated_followings = []
             screen_skipped_count = 0
@@ -511,13 +521,38 @@ class ActionUnfollowFollowers(Plugin):
                     return
 
             if screen_iterated_followings != prev_screen_iterated_followings:
-                prev_screen_iterated_followings = screen_iterated_followings
+                consecutive_same_screen_count = 0  # Reset counter when screen changes
+                prev_screen_iterated_followings = screen_iterated_followings.copy()
                 logger.info("Need to scroll now.", extra={"color": f"{Fore.GREEN}"})
                 list_view = device.find(
                     resourceId=self.ResourceID.LIST,
                 )
                 list_view.scroll(Direction.DOWN)
+                random_sleep(1, 2, modulable=False)
             else:
+                consecutive_same_screen_count += 1
+                logger.debug(f"Same screen detected {consecutive_same_screen_count} time(s).")
+                
+                # If we've seen the same screen too many times, we're stuck
+                if consecutive_same_screen_count >= 3:
+                    logger.warning(
+                        "Stuck on same screen after scrolling. Scroll may not be working.",
+                        extra={"color": f"{Fore.YELLOW}"},
+                    )
+                    # Try switching to a different category before giving up
+                    if self.try_switch_category(device, tried_categories):
+                        logger.info("Switched to a new category, continuing unfollow process.")
+                        posts_end_detector.reset()
+                        checked = {}
+                        prev_screen_iterated_followings = []
+                        consecutive_same_screen_count = 0
+                        continue
+                    logger.info(
+                        "Reached the following list end, finish.",
+                        extra={"color": f"{Fore.GREEN}"},
+                    )
+                    return
+                
                 load_more_button = device.find(
                     resourceId=self.ResourceID.ROW_LOAD_MORE_BUTTON
                 )
@@ -529,6 +564,9 @@ class ActionUnfollowFollowers(Plugin):
                             "Can't iterate over the list anymore, you may be soft-banned and cannot perform this action (refreshing follower list)."
                         )
                         return
+                    list_view = device.find(
+                        resourceId=self.ResourceID.LIST,
+                    )
                     list_view.scroll(Direction.DOWN)
                 else:
                     logger.info(
