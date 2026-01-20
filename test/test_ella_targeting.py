@@ -113,15 +113,15 @@ def temp_account_folder():
             f.write("%CAROUSEL\n")
             f.write("Amazing content!\n")
         
-        # Create pm-ella.txt (ELLA-specific messages)
-        pm_ella_path = os.path.join(account_dir, "pm-ella.txt")
+        # Create pm_ella.txt (ELLA-specific messages)
+        pm_ella_path = os.path.join(account_dir, "pm_ella.txt")
         with open(pm_ella_path, "w", encoding="utf-8") as f:
             f.write("Hola {{nombre}}! 🎉 Este viernes la fiesta ELLA lleva tu nombre\n")
             f.write("{{nombre}}! 💃 Cada viernes ELLA tiene nombre de mujer\n")
             f.write("Hey {{nombre}}! Viste que este viernes ELLA se llama como tú?\n")
         
-        # Create comments-ella.txt (ELLA-specific comments)
-        comments_ella_path = os.path.join(account_dir, "comments-ella.txt")
+        # Create comments_ella.txt (ELLA-specific comments)
+        comments_ella_path = os.path.join(account_dir, "comments_ella.txt")
         with open(comments_ella_path, "w", encoding="utf-8") as f:
             f.write("%PHOTO\n")
             f.write("Qué buen perfil {{nombre}}! 💜\n")
@@ -572,7 +572,7 @@ class TestEllaFileCreation:
     def test_creates_ella_pm_file_from_default(self, temp_account_folder_no_ella_files):
         """Test that ELLA PM file is created from default when missing."""
         accounts_path = os.path.join(temp_account_folder_no_ella_files, "accounts")
-        ella_pm_path = os.path.join(accounts_path, "test_user", "pm-ella.txt")
+        ella_pm_path = os.path.join(accounts_path, "test_user", "pm_ella.txt")
         
         assert not os.path.exists(ella_pm_path)
         
@@ -591,7 +591,7 @@ class TestEllaFileCreation:
     def test_creates_ella_comments_file_from_default(self, temp_account_folder_no_ella_files):
         """Test that ELLA comments file is created from default when missing."""
         accounts_path = os.path.join(temp_account_folder_no_ella_files, "accounts")
-        ella_comments_path = os.path.join(accounts_path, "test_user", "comments-ella.txt")
+        ella_comments_path = os.path.join(accounts_path, "test_user", "comments_ella.txt")
         
         assert not os.path.exists(ella_comments_path)
         
@@ -609,7 +609,7 @@ class TestEllaFileCreation:
     def test_does_not_overwrite_existing_ella_files(self, temp_account_folder):
         """Test that existing ELLA files are not overwritten."""
         accounts_path = os.path.join(temp_account_folder, "accounts")
-        ella_pm_path = os.path.join(accounts_path, "test_user", "pm-ella.txt")
+        ella_pm_path = os.path.join(accounts_path, "test_user", "pm_ella.txt")
         
         # Read original content
         with open(ella_pm_path, "r", encoding="utf-8") as f:
@@ -686,8 +686,8 @@ class TestEllaStorageConstants:
         
         assert hasattr(storage, "FILENAME_ELLA_MESSAGES")
         assert hasattr(storage, "FILENAME_ELLA_COMMENTS")
-        assert storage.FILENAME_ELLA_MESSAGES == "pm-ella.txt"
-        assert storage.FILENAME_ELLA_COMMENTS == "comments-ella.txt"
+        assert storage.FILENAME_ELLA_MESSAGES == "pm_ella.txt"
+        assert storage.FILENAME_ELLA_COMMENTS == "comments_ella.txt"
 
 
 class TestEllaIntegration:

@@ -1,0 +1,13 @@
+%PHOTO
+{{nombre}} qué linda foto! 💜 Este viernes hay shots gratis para ti en ELLA
+Me encanta tu estilo {{nombre}}! ✨ Tienes shots free este finde en ELLA
+{{nombre}} qué buena vibra transmites! 🔥 Te esperamos con shots gratis
+Muy cool {{nombre}}! 👏 Este viernes la fiesta lleva tu nombre
+%VIDEO
+{{nombre}} qué buen contenido! 🙌 Shots gratis para ti este viernes en ELLA
+Me gustó mucho {{nombre}}! 💫 Ven por tus shots free a Sala Osma
+{{nombre}} está genial tu video! ✨ La fiesta de este viernes es tuya
+%CAROUSEL
+Me encantó todo {{nombre}}! 💜 Tienes shots gratis esperándote en ELLA
+{{nombre}} qué buen contenido! 🔥 Este viernes celebramos tu nombre con shots free
+Muy bueno {{nombre}}! 👏 La fiesta ELLA te espera con shots gratis

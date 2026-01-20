@@ -24,8 +24,8 @@ FILENAME_BLACKLIST = "blacklist.txt"
 FILENAME_COMMENTS = "comments_list.txt"
 FILENAME_MESSAGES = "pm_list.txt"
 FILENAME_SOURCE_POSITIONS = "source_positions.json"
-FILENAME_ELLA_MESSAGES = "pm-ella.txt"
-FILENAME_ELLA_COMMENTS = "comments-ella.txt"
+FILENAME_ELLA_MESSAGES = "pm_ella.txt"
+FILENAME_ELLA_COMMENTS = "comments_ella.txt"
 
 
 class Storage:
