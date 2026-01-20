@@ -408,4 +408,23 @@ class CoreArguments(Plugin):
                 "help": "don't ask the user to press enter to continue with an untested IG version",
                 "action": "store_true",
             },
+            {
+                "arg": "--ella-targeting-enabled",
+                "help": "enable ELLA name-based targeting for personalized interactions",
+                "action": "store_true",
+            },
+            {
+                "arg": "--ella-targeting-name",
+                "nargs": None,
+                "help": "the primary name to target for ELLA promotion (e.g., Andrea)",
+                "metavar": "Andrea",
+                "default": None,
+            },
+            {
+                "arg": "--ella-targeting-variations",
+                "nargs": "+",
+                "help": "list of name variations to match (e.g., Andre Andreita Andri Andy)",
+                "metavar": ("Andre", "Andreita"),
+                "default": [],
+            },
         ]

@@ -24,6 +24,8 @@ FILENAME_BLACKLIST = "blacklist.txt"
 FILENAME_COMMENTS = "comments_list.txt"
 FILENAME_MESSAGES = "pm_list.txt"
 FILENAME_SOURCE_POSITIONS = "source_positions.json"
+FILENAME_ELLA_MESSAGES = "pm-ella.txt"
+FILENAME_ELLA_COMMENTS = "comments-ella.txt"
 
 
 class Storage:
@@ -258,6 +260,13 @@ class Storage:
             if "pm_sent" not in user or user["pm_sent"] != pm_sent
             else user["pm_sent"]
         )
+        self.interacted_users[username] = user
+        self._update_file()
+
+    def mark_ella_target(self, username: str) -> None:
+        """Mark a user as an ELLA target interaction."""
+        user = self.interacted_users.get(username, {})
+        user["ella_target"] = True
         self.interacted_users[username] = user
         self._update_file()
 

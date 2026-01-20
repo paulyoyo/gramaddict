@@ -1,0 +1,13 @@
+%PHOTO
+Qué buen perfil {{nombre}}! 💜
+Me gusta tu estilo {{nombre}} ✨
+{{nombre}} qué buena vibra! 🔥
+Muy cool {{nombre}}! 👏
+%VIDEO
+{{nombre}} qué buen contenido! 🙌
+Me gustó {{nombre}}! 💫
+{{nombre}} está genial! ✨
+%CAROUSEL
+Me encantó todo {{nombre}}! 💜
+{{nombre}} qué buen contenido! 🔥
+Muy bueno {{nombre}}! 👏

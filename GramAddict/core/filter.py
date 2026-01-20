@@ -780,3 +780,38 @@ class Filter:
                 return True
 
         return False
+
+    def is_ella_target(self, username: str, biography: str) -> Tuple[bool, str]:
+        """
+        Check if username or biography contains the target name or variations.
+        Returns: (is_match, matched_name)
+        """
+        if not hasattr(args, "ella_targeting_enabled") or not args.ella_targeting_enabled:
+            return False, ""
+
+        target_name = getattr(args, "ella_targeting_name", None)
+        if not target_name:
+            return False, ""
+
+        variations = getattr(args, "ella_targeting_variations", []) or []
+        all_names = [target_name] + list(variations)
+
+        username_lower = username.lower() if username else ""
+        biography_lower = biography.lower() if biography else ""
+
+        for name in all_names:
+            name_lower = name.lower()
+            if name_lower in username_lower:
+                logger.info(
+                    f"[ELLA-TARGET] Detected match for @{username}: name \"{name}\" found in username",
+                    extra={"color": f"{Fore.MAGENTA}{Style.BRIGHT}"},
+                )
+                return True, name
+            if name_lower in biography_lower:
+                logger.info(
+                    f"[ELLA-TARGET] Detected match for @{username}: name \"{name}\" found in biography",
+                    extra={"color": f"{Fore.MAGENTA}{Style.BRIGHT}"},
+                )
+                return True, name
+
+        return False, ""

@@ -136,3 +136,12 @@ working-hours: [10.15-16.40, 18.15-22.46]
 time-delta: 10-15
 repeat: 280-320
 total-sessions: 1 # -1 or commented for infinite sessions
+
+##############################################################################
+# ELLA Targeting (Name-based personalized interactions)
+##############################################################################
+
+# Enable ELLA targeting for personalized promotional messages
+# ella-targeting-enabled: true
+# ella-targeting-name: Andrea  # The primary name to target
+# ella-targeting-variations: [Andre, Andreita, Andri, Andy]  # Name variations to match

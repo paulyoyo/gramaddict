@@ -68,6 +68,7 @@ def interact_with_user(
     session_state,
     scraping_file,
     current_mode,
+    storage_instance=None,
 ) -> Tuple[bool, bool, bool, bool, bool, int, int, int]:
     """
     :return: (whether interaction succeed, whether @username was followed during the interaction, if you scraped that account, if you sent a PM, number of liked, number of watched, number of commented)
@@ -76,9 +77,16 @@ def interact_with_user(
     number_of_watched = 0
     number_of_commented = 0
     comment_done = interacted = followed = scraped = sent_pm = False
+    is_ella = False
+    ella_matched_name = ""
     logger.debug("Checking profile..")
     start_time = time()
     profile_data, skipped = profile_filter.check_profile(device, username)
+
+    is_ella, ella_matched_name = profile_filter.is_ella_target(
+        username, profile_data.biography if profile_data.biography else ""
+    )
+
     if username == my_username:
         logger.info("It's you, skip.")
         return (
@@ -118,10 +126,17 @@ def interact_with_user(
             and profile_filter.can_pm_to_private_or_empty
         ):
             sent_pm = _send_PM(
-                device, session_state, my_username, 0, profile_data.is_private
+                device, session_state, my_username, 0, profile_data.is_private,
+                is_ella_target=is_ella, ella_name=ella_matched_name
             )
             if sent_pm:
                 interacted = True
+                if is_ella and storage_instance:
+                    storage_instance.mark_ella_target(username)
+                    logger.info(
+                        f"[ELLA-TARGET] Interaction completed with @{username} (PM sent)",
+                        extra={"color": f"{Fore.MAGENTA}{Style.BRIGHT}"},
+                    )
         can_follow_private_or_empty = profile_filter.can_follow_private_or_empty()
         if can_follow and can_follow_private_or_empty:
             if scraping_file is None:
@@ -308,6 +323,8 @@ def interact_with_user(
                             args,
                             session_state,
                             media_type,
+                            is_ella_target=is_ella,
+                            ella_name=ella_matched_name,
                         )
                         if comment_done:
                             number_of_commented += 1
@@ -333,10 +350,19 @@ def interact_with_user(
             device.back()
 
     if pm_percentage != 0 and can_send_PM(session_state, pm_percentage):
-        sent_pm = _send_PM(device, session_state, my_username, swipe_amount)
+        sent_pm = _send_PM(
+            device, session_state, my_username, swipe_amount,
+            is_ella_target=is_ella, ella_name=ella_matched_name
+        )
         swipe_amount = 0
         if sent_pm:
             interacted = True
+            if is_ella and storage_instance:
+                storage_instance.mark_ella_target(username)
+                logger.info(
+                    f"[ELLA-TARGET] Interaction completed with @{username} (PM sent)",
+                    extra={"color": f"{Fore.MAGENTA}{Style.BRIGHT}"},
+                )
     if can_follow:
         followed = _follow(
             device,
@@ -593,6 +619,8 @@ def _comment(
     args,
     session_state: SessionState,
     media_type: MediaType,
+    is_ella_target: bool = False,
+    ella_name: str = "",
 ) -> bool:
     if not session_state.check_limit(
         limit_type=session_state.Limit.COMMENTS, output=False
@@ -627,7 +655,7 @@ def _comment(
                     enabled="true",
                 )
                 if comment_box.exists():
-                    comment = load_random_comment(my_username, media_type)
+                    comment = load_random_comment(my_username, media_type, is_ella_target, ella_name)
                     if comment is None:
                         UniversalActions.close_keyboard(device)
                         device.back()
@@ -689,6 +717,8 @@ def _send_PM(
     my_username: str,
     swipe_amount: int,
     private: bool = False,
+    is_ella_target: bool = False,
+    ella_name: str = "",
 ) -> bool:
     universal_actions = UniversalActions(device)
     if private:
@@ -731,7 +761,7 @@ def _send_PM(
     )
 
     if message_box.exists():
-        message = load_random_message(my_username)
+        message = load_random_message(my_username, is_ella_target, ella_name)
         if message is None:
             logger.warning(
                 "If you don't want to comment set 'pm-percentage: 0' in your config.yml."
@@ -894,10 +924,66 @@ def _load_and_clean_txt_file(
     return None
 
 
-def load_random_message(my_username: str) -> Optional[str]:
-    lines = _load_and_clean_txt_file(my_username, storage.FILENAME_MESSAGES)
+def _ensure_ella_files_exist(my_username: str) -> None:
+    """Create ELLA files from defaults if they don't exist."""
+    ella_pm_path = os.path.join(storage.ACCOUNTS, my_username, storage.FILENAME_ELLA_MESSAGES)
+    ella_comments_path = os.path.join(storage.ACCOUNTS, my_username, storage.FILENAME_ELLA_COMMENTS)
+    default_pm_path = os.path.join(storage.ACCOUNTS, my_username, storage.FILENAME_MESSAGES)
+    default_comments_path = os.path.join(storage.ACCOUNTS, my_username, storage.FILENAME_COMMENTS)
+
+    if not path.isfile(ella_pm_path) and path.isfile(default_pm_path):
+        try:
+            with open(default_pm_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            content_with_var = content.replace("!", " {{nombre}}!")
+            with open(ella_pm_path, "w", encoding="utf-8") as f:
+                f.write(content_with_var)
+            logger.warning(
+                f"[ELLA-TARGET] Created {storage.FILENAME_ELLA_MESSAGES} from default. Please customize it!",
+                extra={"color": f"{Fore.YELLOW}"},
+            )
+        except Exception as e:
+            logger.error(f"[ELLA-TARGET] Failed to create ELLA PM file: {e}")
+
+    if not path.isfile(ella_comments_path) and path.isfile(default_comments_path):
+        try:
+            with open(default_comments_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            content_with_var = content.replace("!", " {{nombre}}!")
+            with open(ella_comments_path, "w", encoding="utf-8") as f:
+                f.write(content_with_var)
+            logger.warning(
+                f"[ELLA-TARGET] Created {storage.FILENAME_ELLA_COMMENTS} from default. Please customize it!",
+                extra={"color": f"{Fore.YELLOW}"},
+            )
+        except Exception as e:
+            logger.error(f"[ELLA-TARGET] Failed to create ELLA comments file: {e}")
+
+
+def _replace_nombre_variable(text: str, target_name: str) -> str:
+    """Replace {{nombre}} variable with the configured target name."""
+    return text.replace("{{nombre}}", target_name)
+
+
+def load_random_message(my_username: str, is_ella_target: bool = False, ella_name: str = "") -> Optional[str]:
+    if is_ella_target:
+        _ensure_ella_files_exist(my_username)
+        lines = _load_and_clean_txt_file(my_username, storage.FILENAME_ELLA_MESSAGES)
+        if lines is None:
+            lines = _load_and_clean_txt_file(my_username, storage.FILENAME_MESSAGES)
+        else:
+            logger.info(
+                f"[ELLA-TARGET] Using {storage.FILENAME_ELLA_MESSAGES} for personalized message",
+                extra={"color": f"{Fore.MAGENTA}"},
+            )
+    else:
+        lines = _load_and_clean_txt_file(my_username, storage.FILENAME_MESSAGES)
+
     if lines is not None:
         random_message = choice(lines)
+        if is_ella_target and ella_name:
+            target_name = getattr(args, "ella_targeting_name", ella_name)
+            random_message = _replace_nombre_variable(random_message, target_name)
         return emoji.emojize(
             spintax.spin(random_message.replace("\\n", "\n")),
             use_aliases=True,
@@ -905,8 +991,20 @@ def load_random_message(my_username: str) -> Optional[str]:
     return None
 
 
-def load_random_comment(my_username: str, media_type: MediaType) -> Optional[str]:
-    lines = _load_and_clean_txt_file(my_username, storage.FILENAME_COMMENTS)
+def load_random_comment(my_username: str, media_type: MediaType, is_ella_target: bool = False, ella_name: str = "") -> Optional[str]:
+    if is_ella_target:
+        _ensure_ella_files_exist(my_username)
+        lines = _load_and_clean_txt_file(my_username, storage.FILENAME_ELLA_COMMENTS)
+        if lines is None:
+            lines = _load_and_clean_txt_file(my_username, storage.FILENAME_COMMENTS)
+        else:
+            logger.info(
+                f"[ELLA-TARGET] Using {storage.FILENAME_ELLA_COMMENTS} for personalized comment",
+                extra={"color": f"{Fore.MAGENTA}"},
+            )
+    else:
+        lines = _load_and_clean_txt_file(my_username, storage.FILENAME_COMMENTS)
+
     if lines is None:
         return None
     try:
@@ -914,8 +1012,9 @@ def load_random_comment(my_username: str, media_type: MediaType) -> Optional[str
         video_header = lines.index("%VIDEO")
         carousel_header = lines.index("%CAROUSEL")
     except ValueError:
+        filename = storage.FILENAME_ELLA_COMMENTS if is_ella_target else storage.FILENAME_COMMENTS
         logger.warning(
-            f"You didn't follow the rules for sections in your {storage.FILENAME_COMMENTS} txt file! Look at config example."
+            f"You didn't follow the rules for sections in your {filename} txt file! Look at config example."
         )
         return None
     photo_comments = lines[photo_header + 1 : video_header]
@@ -929,6 +1028,9 @@ def load_random_comment(my_username: str, media_type: MediaType) -> Optional[str
     elif media_type == MediaType.CAROUSEL:
         random_comment = choice(carousel_comments) if len(carousel_comments) > 0 else ""
     if random_comment != "":
+        if is_ella_target and ella_name:
+            target_name = getattr(args, "ella_targeting_name", ella_name)
+            random_comment = _replace_nombre_variable(random_comment, target_name)
         return emoji.emojize(spintax.spin(random_comment), use_aliases=True)
     else:
         return None

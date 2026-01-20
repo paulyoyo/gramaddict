@@ -1,0 +1,6 @@
+Hola {{nombre}}! 🎉 Este viernes la fiesta ELLA lleva tu nombre y tienes shots free esperándote. Estamos en Sala Osma, Barranco. Te animas?
+{{nombre}}! 💃 Cada viernes ELLA tiene nombre de mujer, y este viernes es el tuyo. Eso significa shots free para ti. Nos vemos en Barranco?
+Hey {{nombre}}! Viste que este viernes ELLA se llama como tú? Tienes shots gratis por eso 🍹 La fiesta es en Sala Osma, Pedro de Osma 203. Vas?
+{{nombre}}, este finde la fiesta es tuya literalmente 😄 Shots free para todas las que se llamen como tú. ELLA, Sala Osma, Barranco. Te esperamos!
+Hola! Este viernes en ELLA celebramos a todas las {{nombre}}s con shots gratis 🥳 Es en Sala Osma, Barranco. Hay reggaetón, hits y el lugar es precioso. Vienes?
+{{nombre}}! La fiesta de este viernes lleva tu nombre 💜 Eso = shots free para ti. ELLA está en Sala Osma, Pedro de Osma 203, Barranco. Te gustaría ir?
