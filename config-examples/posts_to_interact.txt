@@ -1,0 +1,8 @@
+# Add Instagram post URLs here, one per line
+# Supports both regular posts (/p/) and reels (/reel/)
+# Bot will interact with likers and commenters of these posts
+# Lines starting with # are ignored
+
+# Example URLs (replace with real post URLs):
+# https://www.instagram.com/p/EXAMPLE123/
+# https://www.instagram.com/reel/EXAMPLE456/

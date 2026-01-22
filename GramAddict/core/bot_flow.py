@@ -10,6 +10,7 @@ from GramAddict.core.config import Config
 from GramAddict.core.device_facade import create_device, get_device_info
 from GramAddict.core.filter import Filter
 from GramAddict.core.filter import load_config as load_filter
+from GramAddict.core.handle_sources import load_config as load_handle_sources
 from GramAddict.core.interaction import load_config as load_interaction
 from GramAddict.core.log import (
     configure_logger,
@@ -87,6 +88,7 @@ def start_bot(**kwargs):
     # through. Because we do a weird config/argparse hybrid,
     # we need to load the configs in a weird way
     load_filter(configs)
+    load_handle_sources(configs)
     load_interaction(configs)
     load_utils(configs)
     load_views(configs)

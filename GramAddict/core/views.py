@@ -1460,6 +1460,110 @@ class OpenedPostView:
             text = text.get_text() if text.exists() else ""
         return text in ["Following", "Requested"]
 
+    def open_comments_section(self) -> bool:
+        """Opens the comments section of a post."""
+        logger.info("Opening comments section...")
+        comment_button = self.device.find(
+            resourceIdMatches=ResourceID.ROW_FEED_BUTTON_COMMENT
+        )
+        if comment_button.exists(Timeout.MEDIUM):
+            comment_button.click()
+            sleep(2)
+            return True
+        logger.warning("Comment button not found.")
+        return False
+
+    def get_comments_container(self):
+        """Gets the container with comment rows (RecyclerView or ListView)."""
+        comments_list = self.device.find(
+            resourceId=ResourceID.LIST,
+            className=ClassName.LIST_VIEW,
+        )
+        if comments_list.exists(Timeout.MEDIUM):
+            return comments_list
+
+        comments_recycler = self.device.find(
+            resourceId=ResourceID.RECYCLER_VIEW,
+            className=ClassName.RECYCLER_VIEW,
+        )
+        if comments_recycler.exists(Timeout.MEDIUM):
+            return comments_recycler
+
+        comments_list_alt = self.device.find(
+            className=ClassName.LIST_VIEW,
+        )
+        if comments_list_alt.exists(Timeout.SHORT):
+            return comments_list_alt
+
+        comments_recycler_alt = self.device.find(
+            className=ClassName.RECYCLER_VIEW,
+        )
+        if comments_recycler_alt.exists(Timeout.SHORT):
+            return comments_recycler_alt
+
+        logger.warning("Could not find comments container.")
+        return None
+
+    def get_commenter_username(self, comment_row) -> Tuple[Optional[str], Optional[DeviceFacade.View]]:
+        """
+        Extracts username from a comment row.
+        Returns (username, username_view) or (None, None) if not found.
+        """
+        username_view = comment_row.child(
+            resourceId=ResourceID.ROW_USER_PRIMARY_NAME,
+        )
+        if username_view.exists():
+            username = username_view.get_text()
+            if username:
+                return username.strip(), username_view
+
+        comment_text_view = comment_row.child(
+            resourceIdMatches=ResourceID.ROW_COMMENT_TEXTVIEW_COMMENT,
+        )
+        if comment_text_view.exists():
+            parent = comment_row
+            first_child = parent.child(index=0)
+            if first_child.exists():
+                second_child = first_child.child(index=0)
+                if second_child.exists() and second_child.get_text():
+                    username = second_child.get_text().strip()
+                    if username and not " " in username[:20]:
+                        return username, second_child
+
+        clickable_texts = []
+        try:
+            for i in range(5):
+                child = comment_row.child(index=i)
+                if child.exists():
+                    for j in range(3):
+                        sub_child = child.child(index=j)
+                        if sub_child.exists():
+                            text = sub_child.get_text()
+                            if text and sub_child.ui_info().get("clickable", False):
+                                text = text.strip()
+                                if text and not " " in text[:15]:
+                                    clickable_texts.append((text, sub_child))
+                                    break
+        except Exception:
+            pass
+
+        if clickable_texts:
+            return clickable_texts[0]
+
+        try:
+            for i in range(3):
+                child = comment_row.child(index=i)
+                if child.exists():
+                    text = child.get_text()
+                    if text:
+                        text = text.strip()
+                        if text and not " " in text[:15]:
+                            return text, child
+        except Exception:
+            pass
+
+        return None, None
+
 
 class PostsGridView:
     def __init__(self, device: DeviceFacade):

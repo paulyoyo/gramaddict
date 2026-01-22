@@ -50,6 +50,13 @@ interact-from-file: [usernames1.txt 10-15, usernames2.txt 3]
 posts-from-file: posts.txt
 feed: 2-5 # is the number of likes you will give in feed
 
+## Interact with likers and commenters of specific posts from URLs
+# post-likers-commenters-from-file: [posts_to_interact.txt]
+# interact-likers: true  # interact with users who liked the posts
+# interact-commenters: true  # interact with users who commented on the posts
+# likers-limit-per-post: 10-15  # max likers to interact with per post
+# commenters-limit-per-post: 5-10  # max commenters to interact with per post
+
 ## Special modifier for jobs and sources
 watch-video-time: 15-35
 watch-photo-time: 3-4
