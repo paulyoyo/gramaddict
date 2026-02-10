@@ -14,6 +14,8 @@ import yaml
 from colorama import Fore, Style
 from langdetect import detect
 
+import gender_guesser.detector as gender_detector
+
 from GramAddict.core.config import get_time_last_save
 from GramAddict.core.device_facade import Timeout
 from GramAddict.core.resources import ResourceID as resources
@@ -49,6 +51,7 @@ FIELD_MIN_POSTS = "min_posts"
 FIELD_MIN_LIKERS = "min_likers"
 FIELD_MAX_LIKERS = "max_likers"
 FIELD_MUTUAL_FRIENDS = "mutual_friends"
+FIELD_TARGET_GENDER = "target_gender"
 
 IGNORE_CHARSETS = ["MATHEMATICAL"]
 
@@ -86,6 +89,7 @@ class SkipReason(Enum):
     HAS_LINK_IN_BIO = auto()
     LT_MUTUAL = auto()
     BIOGRAPHY_IS_EMPTY = auto()
+    GENDER_MISMATCH = auto()
 
 
 class Profile(object):
@@ -235,6 +239,7 @@ class Filter:
             )
             field_skip_if_private = self.conditions.get(FIELD_SKIP_PRIVATE, False)
             field_skip_if_public = self.conditions.get(FIELD_SKIP_PUBLIC, False)
+            field_target_gender = self.conditions.get(FIELD_TARGET_GENDER)
 
         profile_data = self.get_all_data(device)
         if profile_data.is_restricted:
@@ -546,6 +551,24 @@ class Filter:
                         SkipReason.ALPHABET_NAME_NOT_MATCH,
                     )
 
+        if field_target_gender is not None:
+            logger.debug("Checking gender of profile...")
+            detected = self._detect_gender(
+                profile_data.fullname, profile_data.biography
+            )
+            if detected != "unknown" and detected != field_target_gender.lower():
+                logger.info(
+                    f"@{username} detected gender '{detected}' doesn't match target '{field_target_gender}', skip.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
+                return profile_data, self.return_check_profile(
+                    username, profile_data, SkipReason.GENDER_MISMATCH
+                )
+            elif detected == "unknown":
+                logger.debug(
+                    f"@{username} gender is unknown, letting through."
+                )
+
         # If no filters return false, we are good to proceed
         return profile_data, self.return_check_profile(username, profile_data, None)
 
@@ -717,6 +740,68 @@ class Filter:
         except Exception as e:
             logger.error(f"Cannot determine primary language. Error: {e}")
         return language
+
+    @staticmethod
+    def _detect_gender(fullname: str, biography: str) -> str:
+        """Detect gender from display name and biography pronouns.
+        Returns: 'male', 'female', or 'unknown'."""
+        # Extract first name from fullname
+        first_name = ""
+        if fullname:
+            first_name = fullname.strip().split()[0] if fullname.strip() else ""
+
+        # Get gender from name using gender-guesser
+        name_gender = "unknown"
+        if first_name:
+            try:
+                d = gender_detector.Detector()
+                result = d.get_gender(first_name)
+                # result is one of: male, female, mostly_male, mostly_female, andy, unknown
+                if result in ("male", "female"):
+                    name_gender = result
+                elif result == "mostly_male":
+                    name_gender = "mostly_male"
+                elif result == "mostly_female":
+                    name_gender = "mostly_female"
+                else:
+                    name_gender = "unknown"
+            except Exception as e:
+                logger.debug(f"Gender detection from name failed: {e}")
+
+        # Scan biography for pronoun patterns
+        bio_gender = "unknown"
+        if biography:
+            bio_lower = biography.lower()
+            female_pronouns = [
+                r"\bshe/her\b", r"\bshe\s*/\s*her\b",
+                r"\bella\b", r"\blei\b",
+                r"\bpronoun[s]?:\s*she\b",
+            ]
+            male_pronouns = [
+                r"\bhe/him\b", r"\bhe\s*/\s*him\b",
+                r"\bél\b", r"\blui\b",
+                r"\bpronoun[s]?:\s*he\b",
+            ]
+            for pattern in female_pronouns:
+                if re.search(pattern, bio_lower):
+                    bio_gender = "female"
+                    break
+            if bio_gender == "unknown":
+                for pattern in male_pronouns:
+                    if re.search(pattern, bio_lower):
+                        bio_gender = "male"
+                        break
+
+        # Combine results: bio pronouns override when name is ambiguous
+        if bio_gender != "unknown":
+            return bio_gender
+        if name_gender in ("male", "female"):
+            return name_gender
+        if name_gender == "mostly_male":
+            return "male"
+        if name_gender == "mostly_female":
+            return "female"
+        return "unknown"
 
     @staticmethod
     def _get_fullname(device, profileView: ProfileView = None) -> str:

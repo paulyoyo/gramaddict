@@ -32,6 +32,7 @@ mandatory_words: [cat, dogs,]
 specific_alphabet: [LATIN, GREEK]
 biography_language: [it, en]
 biography_banned_language: [es, ch]
+# target_gender: female  # only interact with detected female profiles (female/male)
 
 ## Filters for enabling comments
 # Action specific
