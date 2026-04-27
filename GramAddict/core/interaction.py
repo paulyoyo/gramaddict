@@ -344,7 +344,13 @@ def interact_with_user(
                     f"Could not {reason} media. Posts count: {profile_data.posts_count}."
                 )
             logger.info("Back to profile.")
+            max_back_attempts = 10
+            back_attempts = 0
             while not post_grid_view._get_post_view().exists():
+                back_attempts += 1
+                if back_attempts > max_back_attempts:
+                    logger.error("Could not navigate back to profile grid after %d attempts.", max_back_attempts)
+                    break
                 logger.debug("We are in the wrong place...")
                 device.back()
             device.back()

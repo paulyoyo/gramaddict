@@ -102,7 +102,6 @@ class TabBarView:
     def _getTabBar(self):
         return self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.TAB_BAR),
-            className=ClassName.LINEAR_LAYOUT,
         )
 
     def navigateToHome(self):
@@ -127,7 +126,7 @@ class TabBarView:
         return ProfileView(self.device, is_own_profile=True)
 
     def _get_new_profile_position(self) -> Optional[DeviceFacade.View]:
-        buttons = self.device.find(className=ResourceID.BUTTON)
+        buttons = self.device.find(className=ClassName.BUTTON)
         for button in buttons:
             if button.get_desc() == "Profile":
                 return button
@@ -139,59 +138,49 @@ class TabBarView:
         button = None
         UniversalActions.close_keyboard(self.device)
 
-        if tab == TabBarTabs.HOME:
+        # Map tabs to their resource IDs and content descriptions
+        tab_resource_ids = {
+            TabBarTabs.HOME: "com.instagram.android:id/feed_tab",
+            TabBarTabs.SEARCH: "com.instagram.android:id/search_tab",
+            TabBarTabs.REELS: "com.instagram.android:id/clips_tab",
+            TabBarTabs.PROFILE: "com.instagram.android:id/profile_tab",
+        }
+        tab_descriptions = {
+            TabBarTabs.HOME: TabBarText.HOME_CONTENT_DESC,
+            TabBarTabs.SEARCH: TabBarText.SEARCH_CONTENT_DESC,
+            TabBarTabs.REELS: TabBarText.REELS_CONTENT_DESC,
+            TabBarTabs.ORDERS: TabBarText.ORDERS_CONTENT_DESC,
+            TabBarTabs.ACTIVITY: TabBarText.ACTIVITY_CONTENT_DESC,
+            TabBarTabs.PROFILE: TabBarText.PROFILE_CONTENT_DESC,
+        }
+
+        # Method 1: Find by resource ID (most reliable on newer Instagram)
+        if tab in tab_resource_ids:
             button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.HOME_CONTENT_DESC),
+                resourceId=tab_resource_ids[tab],
             )
-            if not button.exists():
-                logger.debug("Home tab not found by description, trying resource ID...")
+
+        # Method 2: Find by content description (no class constraint)
+        if button is None or not button.exists():
+            if tab in tab_descriptions:
+                logger.debug(f"{tab_name} tab not found by resource ID, trying description...")
                 button = self.device.find(
-                    resourceId="com.instagram.android:id/feed_tab",
+                    descriptionMatches=case_insensitive_re(tab_descriptions[tab]),
                 )
-        elif tab == TabBarTabs.SEARCH:
+
+        # Method 3: Profile-specific fallback via tab_avatar
+        if tab == TabBarTabs.PROFILE and (button is None or not button.exists()):
+            logger.debug("Profile tab not found, trying tab_avatar...")
             button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.SEARCH_CONTENT_DESC),
+                resourceId="com.instagram.android:id/tab_avatar",
             )
-            if not button.exists():
-                button = self.device.find(
-                    resourceId="com.instagram.android:id/search_tab",
-                )
-            if not button.exists():
-                logger.debug("Didn't find search in the tab bar...")
-                home_view = self.navigateToHome()
-                home_view.navigateToSearch()
-                return
-        elif tab == TabBarTabs.REELS:
-            button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.REELS_CONTENT_DESC),
-            )
-            if not button.exists():
-                button = self.device.find(
-                    resourceId="com.instagram.android:id/clips_tab",
-                )
-        elif tab == TabBarTabs.ORDERS:
-            button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.ORDERS_CONTENT_DESC),
-            )
-        elif tab == TabBarTabs.ACTIVITY:
-            button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.ACTIVITY_CONTENT_DESC),
-            )
-        elif tab == TabBarTabs.PROFILE:
-            button = self.device.find(
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX,
-                descriptionMatches=case_insensitive_re(TabBarText.PROFILE_CONTENT_DESC),
-            )
-            if not button.exists():
-                logger.debug("Profile tab not found by description, trying resource ID...")
-                button = self.device.find(
-                    resourceId="com.instagram.android:id/profile_tab",
-                )
+
+        # Method 4: Search-specific fallback via home -> search
+        if tab == TabBarTabs.SEARCH and (button is None or not button.exists()):
+            logger.debug("Didn't find search in the tab bar...")
+            home_view = self.navigateToHome()
+            home_view.navigateToSearch()
+            return
 
         if button is not None and button.exists(Timeout.MEDIUM):
             logger.debug(f"Found tab {tab_name}, clicking...")
@@ -215,7 +204,6 @@ class ActionBarView:
     def _getActionBar(self):
         return self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.ACTION_BAR_CONTAINER),
-            className=ClassName.FRAME_LAYOUT,
         )
 
 
@@ -302,7 +290,6 @@ class PlacesView:
 
     def _getInformBody(self):
         return self.device.find(
-            className=ClassName.TEXT_VIEW,
             resourceId=ResourceID.INFORM_BODY,
         )
 
@@ -332,7 +319,6 @@ class SearchView:
     def _getUsernameRow(self, username):
         return self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.ROW_SEARCH_USER_USERNAME),
-            className=ClassName.TEXT_VIEW,
             textMatches=case_insensitive_re(username),
         )
 
@@ -341,7 +327,6 @@ class SearchView:
             resourceIdMatches=case_insensitive_re(
                 ResourceID.ROW_HASHTAG_TEXTVIEW_TAG_NAME
             ),
-            className=ClassName.TEXT_VIEW,
             text=f"#{hashtag}",
         )
 
@@ -565,7 +550,6 @@ class PostsViewList:
             likes_view = self.device.find(
                 index=-1,
                 resourceId=ResourceID.ROW_FEED_TEXTVIEW_LIKES,
-                className=ClassName.TEXT_VIEW,
             )
             description_view = self.device.find(
                 resourceIdMatches=ResourceID.ROW_FEED_COMMENT_TEXTVIEW_LAYOUT
@@ -646,7 +630,6 @@ class PostsViewList:
             likes_view = self.device.find(
                 index=-1,
                 resourceId=ResourceID.ROW_FEED_TEXTVIEW_LIKES,
-                className=ClassName.TEXT_VIEW,
             )
             if " Liked by" in likes_view.get_text():
                 post_liked_by_a_following = True
@@ -1218,7 +1201,6 @@ class OptionsView:
         logger.debug("Navigate to Settings")
         button = self.device.find(
             resourceId=ResourceID.MENU_OPTION_TEXT,
-            className=ClassName.TEXT_VIEW,
         )
         if button.exists():
             button.click()
@@ -1682,19 +1664,25 @@ class ProfileView(ActionBarView):
                 profile_tab.click(sleep=SleepTime.SHORT)
                 return True
             
-            # Method 2: Find by content description "Profile"
+            # Method 2: Find by content description "Profile" (no class constraint)
             profile_button = self.device.find(
                 descriptionMatches=case_insensitive_re("^Profile$"),
-                classNameMatches=ClassName.BUTTON_OR_FRAME_LAYOUT_REGEX
             )
             if profile_button.exists(Timeout.SHORT):
                 profile_button.click(sleep=SleepTime.SHORT)
                 return True
-            
-            # Method 3: Tab bar child index (fallback)
+
+            # Method 3: Find by tab_avatar resource ID
+            avatar_button = self.device.find(
+                resourceIdMatches=case_insensitive_re(ResourceID.TAB_AVATAR)
+            )
+            if avatar_button.exists(Timeout.SHORT):
+                avatar_button.click(sleep=SleepTime.SHORT)
+                return True
+
+            # Method 4: Tab bar child index (fallback)
             tab_bar = self.device.find(
                 resourceIdMatches=case_insensitive_re(ResourceID.TAB_BAR),
-                className=ClassName.LINEAR_LAYOUT
             )
             if tab_bar.exists(Timeout.SHORT):
                 # Profile is the last tab (index 4)
@@ -1814,7 +1802,6 @@ class ProfileView(ActionBarView):
             resourceIdMatches=case_insensitive_re(
                 ResourceID.ROW_PROFILE_HEADER_TEXTVIEW_FOLLOWERS_COUNT
             ),
-            className=ClassName.TEXT_VIEW,
         )
         followers_text_view.wait(Timeout.MEDIUM)
         return followers_text_view
@@ -1838,7 +1825,6 @@ class ProfileView(ActionBarView):
             resourceIdMatches=case_insensitive_re(
                 ResourceID.ROW_PROFILE_HEADER_TEXTVIEW_FOLLOWING_COUNT
             ),
-            className=ClassName.TEXT_VIEW,
         )
         following_text_view.wait(Timeout.MEDIUM)
         return following_text_view
@@ -1901,7 +1887,6 @@ class ProfileView(ActionBarView):
     def getProfileBiography(self) -> str:
         biography = self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.PROFILE_HEADER_BIO_TEXT),
-            className=ClassName.TEXT_VIEW,
         )
         if biography.exists():
             biography_text = biography.get_text()
@@ -1926,7 +1911,6 @@ class ProfileView(ActionBarView):
     def getFullName(self):
         full_name_view = self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.PROFILE_HEADER_FULL_NAME),
-            className=ClassName.TEXT_VIEW,
         )
         if full_name_view.exists(Timeout.SHORT):
             fullname_text = full_name_view.get_text()
@@ -2068,12 +2052,10 @@ class ProfileView(ActionBarView):
     def _navigateToTab(self, tab: TabBarText):
         tabs_view = self.device.find(
             resourceIdMatches=case_insensitive_re(ResourceID.PROFILE_TAB_LAYOUT),
-            className=ClassName.HORIZONTAL_SCROLL_VIEW,
         )
         button = tabs_view.child(
             descriptionMatches=case_insensitive_re(tab),
             resourceIdMatches=case_insensitive_re(ResourceID.PROFILE_TAB_ICON_VIEW),
-            className=ClassName.IMAGE_VIEW,
         )
 
         attempts = 0
@@ -2103,7 +2085,6 @@ class FollowingView:
         if user_row is None:
             user_row = self.device.find(
                 resourceId=ResourceID.FOLLOW_LIST_CONTAINER,
-                className=ClassName.LINEAR_LAYOUT,
             )
         if user_row.exists(Timeout.MEDIUM):
             exists = True
