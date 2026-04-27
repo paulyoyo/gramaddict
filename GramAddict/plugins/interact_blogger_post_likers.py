@@ -59,8 +59,18 @@ class InteractBloggerPostLikers(Plugin):
         self.args = configs.args
         self.current_mode = plugin
 
-        # Handle sources
-        sources = [s for s in self.args.blogger_post_likers if s.strip()]
+        # Handle sources - fall back to blogger-followers if blogger-post-likers not defined
+        if self.args.blogger_post_likers is not None:
+            sources = [s for s in self.args.blogger_post_likers if s.strip()]
+        elif self.args.blogger_followers is not None:
+            sources = [s for s in self.args.blogger_followers if s.strip()]
+            logger.info(
+                "blogger-post-likers not defined, using blogger-followers as fallback.",
+                extra={"color": f"{Style.BRIGHT}"},
+            )
+        else:
+            logger.warning("No sources found for blogger-post-likers and no blogger-followers fallback available.")
+            return
         for source in sample_sources(sources, self.args.truncate_sources):
             (
                 active_limits_reached,
