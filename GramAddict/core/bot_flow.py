@@ -200,6 +200,9 @@ def start_bot(**kwargs):
                 session_state.my_followers_count,
                 session_state.my_following_count,
             ) = profile_view.getProfileInfo()
+            # Override username from config if specified (profile tab may show wrong user on v300+)
+            if configs.args.username is not None:
+                session_state.my_username = configs.args.username
         except Exception as e:
             logger.error(f"Exception: {e}")
             save_crash(device)

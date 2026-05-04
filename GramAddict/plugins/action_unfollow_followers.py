@@ -20,6 +20,8 @@ from GramAddict.core.views import (
     Direction,
     FollowingView,
     ProfileView,
+    SearchView,
+    TabBarView,
     UniversalActions,
 )
 
@@ -143,6 +145,8 @@ class ActionUnfollowFollowers(Plugin):
                 f"You can't unfollow {count_arg} accounts, because you set min-following to {self.args.min_following} and you have {self.session_state.my_following_count} followers. For that reason only {count} unfollows can be performed."
             )
 
+        use_search_based = self.unfollow_type == "unfollow"
+
         if self.unfollow_type == "unfollow":
             self.unfollow_type = UnfollowRestriction.FOLLOWED_BY_SCRIPT
         elif self.unfollow_type == "unfollow-non-followers":
@@ -154,33 +158,59 @@ class ActionUnfollowFollowers(Plugin):
         else:
             self.unfollow_type = UnfollowRestriction.ANY
 
-        @run_safely(
-            device=device,
-            device_id=self.device_id,
-            sessions=self.sessions,
-            session_state=self.session_state,
-            screen_record=self.args.screen_record,
-            configs=configs,
-        )
-        def job():
-            self.unfollow(
-                device,
-                count - self.state.unfollowed_count,
-                self.on_unfollow,
-                storage,
-                self.unfollow_type,
-                self.session_state.my_username,
-                plugin,
+        if use_search_based:
+            @run_safely(
+                device=device,
+                device_id=self.device_id,
+                sessions=self.sessions,
+                session_state=self.session_state,
+                screen_record=self.args.screen_record,
+                configs=configs,
             )
-            logger.info(
-                f"Unfollowed {self.state.unfollowed_count}, finish.",
-                extra={"color": f"{Fore.CYAN}"},
-            )
-            self.state.is_job_completed = True
-            device.back()
+            def job():
+                self.unfollow_from_list(
+                    device,
+                    count - self.state.unfollowed_count,
+                    self.on_unfollow,
+                    storage,
+                    self.session_state.my_username,
+                    plugin,
+                )
+                logger.info(
+                    f"Unfollowed {self.state.unfollowed_count}, finish.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
 
-        while not self.state.is_job_completed and (self.state.unfollowed_count < count):
-            job()
+            while not self.state.is_job_completed and (self.state.unfollowed_count < count):
+                job()
+        else:
+            @run_safely(
+                device=device,
+                device_id=self.device_id,
+                sessions=self.sessions,
+                session_state=self.session_state,
+                screen_record=self.args.screen_record,
+                configs=configs,
+            )
+            def job():
+                self.unfollow(
+                    device,
+                    count - self.state.unfollowed_count,
+                    self.on_unfollow,
+                    storage,
+                    self.unfollow_type,
+                    self.session_state.my_username,
+                    plugin,
+                )
+                logger.info(
+                    f"Unfollowed {self.state.unfollowed_count}, finish.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
+                self.state.is_job_completed = True
+                device.back()
+
+            while not self.state.is_job_completed and (self.state.unfollowed_count < count):
+                job()
 
     def unfollow(
         self,
@@ -214,6 +244,134 @@ class ActionUnfollowFollowers(Plugin):
     def on_unfollow(self):
         self.state.unfollowed_count += 1
         self.session_state.totalUnfollowed += 1
+
+    def do_unfollow_from_profile(self, device):
+        """Unfollow user from their profile page (assumes we're already on the profile)."""
+        unfollow_button = device.find(
+            classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+            clickable=True,
+            textMatches=FOLLOWING_REGEX,
+        )
+        attempts = 2
+        for _ in range(attempts):
+            if unfollow_button.exists():
+                break
+            scrollable = device.find(classNameMatches=ClassName.VIEW_PAGER)
+            if scrollable.exists():
+                scrollable.scroll(Direction.UP)
+            unfollow_button = device.find(
+                classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+                clickable=True,
+                textMatches=FOLLOWING_REGEX,
+            )
+
+        if not unfollow_button.exists():
+            logger.error("Cannot find Following button on profile.")
+            save_crash(device)
+            return False
+
+        logger.debug("Unfollow button click.")
+        unfollow_button.click()
+
+        confirm_unfollow_button = None
+        attempts = 3
+        for _ in range(attempts):
+            confirm_unfollow_button = device.find(
+                resourceId=self.ResourceID.FOLLOW_SHEET_UNFOLLOW_ROW
+            )
+            if confirm_unfollow_button.exists(Timeout.MEDIUM):
+                break
+            random_sleep(1, 2, modulable=False)
+
+        if not confirm_unfollow_button or not confirm_unfollow_button.exists():
+            logger.error("Cannot confirm unfollow.")
+            save_crash(device)
+            return False
+
+        logger.debug("Confirm unfollow.")
+        confirm_unfollow_button.click()
+        random_sleep(0, 1, modulable=False)
+
+        # Handle private account confirmation
+        private_unfollow_button = device.find(
+            classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+            textMatches=UNFOLLOW_REGEX,
+        )
+        if private_unfollow_button.exists(Timeout.SHORT):
+            logger.debug("Confirm unfollow private account.")
+            private_unfollow_button.click()
+
+        UniversalActions.detect_block(device)
+        return True
+
+    def unfollow_from_list(
+        self, device, count, on_unfollow, storage, my_username, job_name
+    ):
+        """Search-based unfollow: build list from JSON, search each user, unfollow from profile."""
+        unfollow_delay = int(self.args.unfollow_delay)
+        unfollow_list = storage.get_unfollowable_users(unfollow_delay, count)
+
+        if not unfollow_list:
+            logger.info("No users eligible for unfollowing.")
+            self.state.is_job_completed = True
+            return
+
+        logger.info(
+            f"Found {len(unfollow_list)} users eligible for unfollowing.",
+            extra={"color": f"{Fore.CYAN}"},
+        )
+
+        for username in unfollow_list:
+            if self.session_state.check_limit(
+                limit_type=self.session_state.Limit.UNFOLLOWS, output=False
+            ):
+                logger.info("Unfollow session limit reached.")
+                self.state.is_job_completed = True
+                return
+
+            logger.info(
+                f"Searching for @{username} to unfollow...",
+                extra={"color": f"{Fore.YELLOW}"},
+            )
+
+            # Navigate to search and find user
+            search_view = TabBarView(device).navigateToSearch()
+            if not search_view.navigate_to_target(username, "unfollow"):
+                logger.warning(f"Could not find @{username} in search. Skipping.")
+                device.back()
+                TabBarView(device).navigateToHome()
+                random_sleep(2, 4)
+                continue
+
+            # We're now on the user's profile - unfollow
+            if self.do_unfollow_from_profile(device):
+                logger.info(
+                    f"Unfollowed @{username}.",
+                    extra={"color": f"{Fore.YELLOW}"},
+                )
+                storage.add_interacted_user(
+                    username,
+                    self.session_state.id,
+                    unfollowed=True,
+                    job_name=job_name,
+                )
+                on_unfollow()
+            else:
+                # Not following this user anymore — mark as unfollowed to clean up stale data
+                logger.warning(f"Not following @{username}. Marking as unfollowed.")
+                storage.add_interacted_user(
+                    username,
+                    self.session_state.id,
+                    unfollowed=True,
+                    job_name=job_name,
+                )
+
+            # Navigate back to home before next search
+            device.back()
+            TabBarView(device).navigateToHome()
+            random_sleep(2, 5)
+
+        self.state.is_job_completed = True
 
     def switch_to_category(self, device, category_name: str) -> bool:
         """Switch to a different following category (e.g., 'Least interacted with', 'Most shown in feed')"""

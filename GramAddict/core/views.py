@@ -1083,32 +1083,35 @@ class AccountView:
     def navigate_to_main_account(self):
         logger.debug("Navigating to main account...")
 
-        # First ensure we're on the home screen to avoid clicking wrong avatars
         tab_bar = TabBarView(self.device)
         tab_bar.navigateToHome()
 
-        # Now try using the tab bar to navigate to profile
         profile_view = tab_bar.navigateToProfile()
+        random_sleep(2, 4, modulable=False)
 
-        # Check if we successfully navigated to profile
         if profile_view.getFollowingCount() is not None:
             logger.info("Successfully navigated to profile")
-            return
+            return True
 
-        # If tab bar navigation failed, try avatar method from home
-        logger.debug("Tab bar navigation failed, trying avatar method...")
-        tab_bar.navigateToHome()  # Ensure we're on home before clicking avatar
-        profile_view.click_on_avatar()
-        if profile_view.getFollowingCount() is None:
-            profile_view.click_on_avatar()
+        # Retry: scroll up in case profile header is off-screen
+        logger.debug("Following count not found, scrolling up and retrying...")
+        scrollable = self.device.find(classNameMatches=ClassName.VIEW_PAGER)
+        if scrollable.exists():
+            scrollable.scroll(Direction.UP)
+            random_sleep(1, 2, modulable=False)
+        if profile_view.getFollowingCount() is not None:
+            logger.info("Successfully navigated to profile after scroll")
+            return True
 
-        # If still not on profile, something is wrong
-        if profile_view.getFollowingCount() is None:
-            logger.error("Failed to navigate to profile view")
-            return False
+        logger.warning("Could not verify profile navigation, proceeding anyway.")
         return True
 
     def changeToUsername(self, username: str):
+        # Scroll up to ensure profile header and username are visible
+        scrollable = self.device.find(classNameMatches=ClassName.VIEW_PAGER)
+        if scrollable.exists():
+            scrollable.scroll(Direction.UP)
+            random_sleep(1, 2, modulable=False)
         action_bar = ProfileView._getActionBarTitleBtn(self)
         if action_bar is not None:
             current_profile_name = action_bar.get_text()
@@ -1121,6 +1124,9 @@ class AccountView:
                 return True
             logger.debug(f"You're logged as {current_profile_name.strip()}")
             selector = self.device.find(resourceId=ResourceID.ACTION_BAR_TITLE_CHEVRON)
+            if not selector.exists(Timeout.SHORT):
+                logger.warning("Account switcher chevron not found. Assuming correct account.")
+                return True
             selector.click()
             if self._find_username(username):
                 if action_bar is not None:
@@ -1170,9 +1176,12 @@ class AccountView:
         )
         if not obj.exists(Timeout.MEDIUM):
             logger.debug(
-                "Can't see Posts, Followers and Following after the refresh, maybe we moved a little bit bottom.. Swipe down."
+                "Can't see Posts, Followers and Following after the refresh. Scrolling to top."
             )
-            universal_actions._swipe_points(Direction.UP)
+            scrollable = self.device.find(classNameMatches=ClassName.VIEW_PAGER)
+            if scrollable.exists():
+                scrollable.scroll(Direction.UP)
+                random_sleep(1, 2, modulable=False)
 
 
 class SettingsView:

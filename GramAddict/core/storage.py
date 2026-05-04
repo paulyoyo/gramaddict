@@ -157,6 +157,25 @@ class Storage:
             return True
         return datetime.now() - stored_time >= limit_time
 
+    def get_unfollowable_users(self, unfollow_delay_days, count):
+        """Get a list of usernames eligible for unfollowing (bot-followed only, oldest first)."""
+        candidates = []
+        for username, user_data in self.interacted_users.items():
+            status = user_data.get(USER_FOLLOWING_STATUS, "").upper()
+            if status not in (FollowingStatus.FOLLOWED.name, FollowingStatus.REQUESTED.name):
+                continue
+            if self.is_user_in_whitelist(username):
+                continue
+            last_interaction_str = user_data.get(USER_LAST_INTERACTION)
+            if not last_interaction_str:
+                continue
+            last_interaction = datetime.strptime(last_interaction_str, "%Y-%m-%d %H:%M:%S.%f")
+            if not self.can_be_unfollowed(last_interaction, unfollow_delay_days):
+                continue
+            candidates.append((username, last_interaction))
+        candidates.sort(key=lambda x: x[1])
+        return [username for username, _ in candidates[:count]]
+
     def check_user_was_interacted(self, username):
         """returns when a username has been interacted, False if not already interacted"""
         user = self.interacted_users.get(username)
