@@ -92,11 +92,11 @@ def daily_summary(sessions):
             daily_aggregated_data[date][key] += session.get(key, 0)
 
         daily_aggregated_data[date]["followers"] = min(
-            session.get("profile", {}).get("followers", 0),
+            session.get("profile", {}).get("followers") or 0,
             daily_aggregated_data[date]["followers"],
         )
         daily_aggregated_data[date]["following"] = min(
-            session.get("profile", {}).get("following", 0),
+            session.get("profile", {}).get("following") or 0,
             daily_aggregated_data[date]["following"],
         )
     return _calculate_followers_gained(daily_aggregated_data)
