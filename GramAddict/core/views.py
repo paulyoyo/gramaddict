@@ -168,14 +168,25 @@ class TabBarView:
                     descriptionMatches=case_insensitive_re(tab_descriptions[tab]),
                 )
 
-        # Method 3: Profile-specific fallback via tab_avatar
+        # Method 3: Find by tab_button_name_text (Instagram v300+)
+        if button is None or not button.exists():
+            if tab in tab_descriptions:
+                logger.debug(f"{tab_name} tab not found, trying tab_button_name_text...")
+                tab_text = self.device.find(
+                    resourceIdMatches=case_insensitive_re(ResourceID.TAB_BUTTON_NAME_TEXT),
+                    textMatches=case_insensitive_re(tab_descriptions[tab]),
+                )
+                if tab_text.exists():
+                    button = tab_text
+
+        # Method 4: Profile-specific fallback via tab_avatar
         if tab == TabBarTabs.PROFILE and (button is None or not button.exists()):
             logger.debug("Profile tab not found, trying tab_avatar...")
             button = self.device.find(
                 resourceId="com.instagram.android:id/tab_avatar",
             )
 
-        # Method 4: Search-specific fallback via home -> search
+        # Method 5: Search-specific fallback via home -> search
         if tab == TabBarTabs.SEARCH and (button is None or not button.exists()):
             logger.debug("Didn't find search in the tab bar...")
             home_view = self.navigateToHome()
@@ -186,6 +197,35 @@ class TabBarView:
             logger.debug(f"Found tab {tab_name}, clicking...")
             button.click(sleep=SleepTime.SHORT)
             return
+
+        # Method 6: Coordinate-based fallback for Instagram v300+
+        # Tab bar is always at bottom with 5 evenly-spaced tabs:
+        # HOME(1/5) | SEARCH(2/5) | REELS(3/5) | ACTIVITY(4/5) | PROFILE(5/5)
+        logger.warning(f"Tab {tab_name} not found by any selector, using coordinate fallback...")
+        tab_positions = {
+            TabBarTabs.HOME: 1,
+            TabBarTabs.SEARCH: 2,
+            TabBarTabs.REELS: 3,
+            TabBarTabs.ACTIVITY: 4,
+            TabBarTabs.ORDERS: 4,
+            TabBarTabs.PROFILE: 5,
+        }
+        if tab in tab_positions:
+            try:
+                info = self.device.get_info()
+                screen_width = info["displayWidth"]
+                screen_height = info["displayHeight"]
+                pos = tab_positions[tab]
+                # Calculate x position: center of the nth tab slot out of 5
+                x = int(screen_width * (2 * pos - 1) / 10)
+                # Tab bar is roughly the bottom 7% of screen
+                y = int(screen_height * uniform(0.95, 0.98))
+                logger.debug(f"Coordinate tap for {tab_name}: ({x}, {y})")
+                self.device.deviceV2.click(x, y)
+                sleep(1.5)
+                return
+            except Exception as e:
+                logger.error(f"Coordinate fallback failed: {e}")
 
         logger.error(f"Didn't find tab {tab_name} in the tab bar...")
         # Try to save debug info
@@ -447,7 +487,8 @@ class SearchView:
                 resourceIdMatches=ResourceID.SEARCH_ROW_ITEM,
             )
         if obj.exists():
-            obj.click()
+            # Click left side to avoid Follow/action buttons on the right (Instagram v300+)
+            obj.click(mode=Location.LEFTEDGE)
             return True
         return False
 
@@ -1137,6 +1178,25 @@ class AccountView:
                     logger.error(
                         "Cannot find action bar (where you select your account)!"
                     )
+        else:
+            # Instagram v300+ fallback: action bar not found by resource ID
+            # Try to find username text anywhere near top of screen
+            logger.warning("Action bar not found. Trying to find username on screen...")
+            username_on_screen = self.device.find(
+                textMatches=case_insensitive_re(username),
+                className=ClassName.TEXT_VIEW,
+            )
+            if username_on_screen.exists(Timeout.SHORT):
+                logger.info(
+                    f"Found {username} on screen, assuming correct account.",
+                    extra={"color": f"{Style.BRIGHT}{Fore.BLUE}"},
+                )
+                return True
+            # Last resort: assume we're on the correct account since we navigated to profile
+            logger.warning(
+                f"Cannot verify account is {username}, but proceeding anyway (v300+ UI)."
+            )
+            return True
         return False
 
     def _find_username(self, username, has_scrolled=False):
@@ -1619,9 +1679,37 @@ class ProfileView(ActionBarView):
         )
         if not watching_stories and action_bar.exists(Timeout.LONG) or watching_stories:
             return action_bar
-        logger.error(
-            "Unable to find action bar! (The element with the username at top)"
+
+        # Fallback for Instagram v300+: try action_bar_new_title_container child
+        logger.debug("Action bar title not found by known IDs, trying new title container...")
+        new_title_container = self.device.find(
+            resourceIdMatches=case_insensitive_re(
+                ResourceID.ACTION_BAR_NEW_TITLE_CONTAINER
+            ),
         )
+        if new_title_container.exists(Timeout.SHORT):
+            title_child = new_title_container.child(
+                className=ClassName.TEXT_VIEW,
+            )
+            if title_child.exists():
+                return title_child
+
+        # Fallback: look for the action_bar_container and find first TextView in it
+        logger.debug("Trying action_bar_container child TextView...")
+        container = self.device.find(
+            resourceIdMatches=case_insensitive_re(ResourceID.ACTION_BAR_CONTAINER),
+        )
+        if container.exists(Timeout.SHORT):
+            title_child = container.child(
+                className=ClassName.TEXT_VIEW,
+            )
+            if title_child.exists():
+                return title_child
+
+        if not watching_stories:
+            logger.error(
+                "Unable to find action bar! (The element with the username at top)"
+            )
         return None
 
     def _getSomeText(self) -> Tuple[Optional[str], Optional[str], Optional[str]]:

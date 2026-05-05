@@ -4,7 +4,7 @@ from enum import Enum, unique
 from colorama import Fore
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.device_facade import DeviceFacade, Timeout
+from GramAddict.core.device_facade import DeviceFacade, Location, Timeout
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.resources import ClassName
 from GramAddict.core.resources import ResourceID as resources
@@ -752,7 +752,8 @@ class ActionUnfollowFollowers(Plugin):
         if not username_view.exists():
             logger.error(f"Cannot find @{username}, skip.")
             return False
-        username_view.click_retry()
+        # Click left edge to navigate to profile (avoid Follow buttons on right in v300+)
+        username_view.click_retry(mode=Location.LEFTEDGE)
 
         is_following_you = self.check_is_follower(device, username, my_username)
         if is_following_you is not None:
