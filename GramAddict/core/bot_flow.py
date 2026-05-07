@@ -177,7 +177,21 @@ def start_bot(**kwargs):
 
             UniversalActions.close_keyboard(device)
         else:
-            break
+            if configs.args.repeat and can_repeat(len(sessions), total_sessions):
+                logger.warning(
+                    "Could not open Instagram. Will retry in next session.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
+                time_left = (
+                    get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
+                )
+                try:
+                    sleep(time_left)
+                except KeyboardInterrupt:
+                    stop_bot(device, sessions, session_state, was_sleeping=True)
+                continue
+            else:
+                break
         profile_view = ProfileView(device)
         account_view = AccountView(device)
         tab_bar_view = TabBarView(device)
@@ -192,7 +206,22 @@ def start_bot(**kwargs):
                     )
                     save_crash(device)
                     device.back()
-                    break
+                    close_instagram(device)
+                    if configs.args.repeat and can_repeat(len(sessions), total_sessions):
+                        logger.warning(
+                            "Username switch failed. Will retry in next session.",
+                            extra={"color": f"{Fore.CYAN}"},
+                        )
+                        time_left = (
+                            get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
+                        )
+                        try:
+                            sleep(time_left)
+                        except KeyboardInterrupt:
+                            stop_bot(device, sessions, session_state, was_sleeping=True)
+                        continue
+                    else:
+                        break
             account_view.refresh_account()
             (
                 session_state.my_username,
@@ -206,7 +235,22 @@ def start_bot(**kwargs):
         except Exception as e:
             logger.error(f"Exception: {e}")
             save_crash(device)
-            break
+            close_instagram(device)
+            if configs.args.repeat and can_repeat(len(sessions), total_sessions):
+                logger.warning(
+                    "Profile navigation failed. Will retry in next session.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
+                time_left = (
+                    get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
+                )
+                try:
+                    sleep(time_left)
+                except KeyboardInterrupt:
+                    stop_bot(device, sessions, session_state, was_sleeping=True)
+                continue
+            else:
+                break
 
         if (
             session_state.my_username is None
@@ -221,7 +265,22 @@ def start_bot(**kwargs):
                 f"Username: {session_state.my_username}, Posts: {session_state.my_posts_count}, Followers: {session_state.my_followers_count}, Following: {session_state.my_following_count}"
             )
             save_crash(device)
-            stop_bot(device, sessions, session_state)
+            close_instagram(device)
+            if configs.args.repeat and can_repeat(len(sessions), total_sessions):
+                logger.warning(
+                    "Could not read profile info. Will retry in next session instead of stopping.",
+                    extra={"color": f"{Fore.CYAN}"},
+                )
+                time_left = (
+                    get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
+                )
+                try:
+                    sleep(time_left)
+                except KeyboardInterrupt:
+                    stop_bot(device, sessions, session_state, was_sleeping=True)
+                continue
+            else:
+                stop_bot(device, sessions, session_state)
 
         if not is_log_file_updated():
             try:
