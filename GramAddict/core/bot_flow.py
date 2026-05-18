@@ -267,20 +267,39 @@ def start_bot(**kwargs):
             save_crash(device)
             close_instagram(device)
             if configs.args.repeat and can_repeat(len(sessions), total_sessions):
-                logger.warning(
-                    "Could not read profile info. Will retry in next session instead of stopping.",
-                    extra={"color": f"{Fore.CYAN}"},
-                )
-                time_left = (
-                    get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
-                )
-                try:
-                    sleep(time_left)
-                except KeyboardInterrupt:
-                    stop_bot(device, sessions, session_state, was_sleeping=True)
-                continue
+                startup_retry_count = getattr(session_state, '_startup_retries', 0) + 1
+                max_startup_retries = 5
+                if startup_retry_count <= max_startup_retries:
+                    retry_minutes = min(2 * startup_retry_count, 10)
+                    logger.warning(
+                        f"Could not read profile info. Quick retry {startup_retry_count}/{max_startup_retries} in {retry_minutes} minutes.",
+                        extra={"color": f"{Fore.CYAN}"},
+                    )
+                    session_state._startup_retries = startup_retry_count
+                    try:
+                        sleep(retry_minutes * 60)
+                    except KeyboardInterrupt:
+                        stop_bot(device, sessions, session_state, was_sleeping=True)
+                    continue
+                else:
+                    logger.warning(
+                        f"Failed {max_startup_retries} startup retries. Sleeping normal interval.",
+                        extra={"color": f"{Fore.CYAN}"},
+                    )
+                    session_state._startup_retries = 0
+                    time_left = (
+                        get_value(configs.args.repeat, "Sleep for {} minutes.", 180) * 60
+                    )
+                    try:
+                        sleep(time_left)
+                    except KeyboardInterrupt:
+                        stop_bot(device, sessions, session_state, was_sleeping=True)
+                    continue
             else:
                 stop_bot(device, sessions, session_state)
+
+        # Reset startup retry counter on successful profile read
+        session_state._startup_retries = 0
 
         if not is_log_file_updated():
             try:

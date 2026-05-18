@@ -161,7 +161,7 @@ class TabBarView:
             )
 
         # Method 2: Find by content description (no class constraint)
-        if button is None or not button.exists():
+        if button is None or not button.exists(Timeout.SHORT):
             if tab in tab_descriptions:
                 logger.debug(f"{tab_name} tab not found by resource ID, trying description...")
                 button = self.device.find(
@@ -200,12 +200,12 @@ class TabBarView:
 
         # Method 6: Coordinate-based fallback for Instagram v300+
         # Tab bar is always at bottom with 5 evenly-spaced tabs:
-        # HOME(1/5) | SEARCH(2/5) | REELS(3/5) | ACTIVITY(4/5) | PROFILE(5/5)
+        # HOME(1/5) | SEARCH(2/5) | CREATE(3/5) | REELS(4/5) | PROFILE(5/5)
         logger.warning(f"Tab {tab_name} not found by any selector, using coordinate fallback...")
         tab_positions = {
             TabBarTabs.HOME: 1,
             TabBarTabs.SEARCH: 2,
-            TabBarTabs.REELS: 3,
+            TabBarTabs.REELS: 4,
             TabBarTabs.ACTIVITY: 4,
             TabBarTabs.ORDERS: 4,
             TabBarTabs.PROFILE: 5,
@@ -218,8 +218,8 @@ class TabBarView:
                 pos = tab_positions[tab]
                 # Calculate x position: center of the nth tab slot out of 5
                 x = int(screen_width * (2 * pos - 1) / 10)
-                # Tab bar is roughly the bottom 7% of screen
-                y = int(screen_height * uniform(0.95, 0.98))
+                # Tab bar is at ~88-94% of total screen height (above system nav bar)
+                y = int(screen_height * uniform(0.89, 0.93))
                 logger.debug(f"Coordinate tap for {tab_name}: ({x}, {y})")
                 self.device.deviceV2.click(x, y)
                 sleep(1.5)
