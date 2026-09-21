@@ -41,6 +41,7 @@ from GramAddict.core.utils import (
     move_usernames_to_accounts,
     open_instagram,
     pre_post_script,
+    print_slack_reports,
     print_telegram_reports,
     restart_atx_agent,
     save_crash,
@@ -111,6 +112,7 @@ def start_bot(**kwargs):
     # init
     analytics_at_end = False
     telegram_reports_at_end = False
+    slack_reports_at_end = False
     followers_now = None
     following_now = None
 
@@ -329,6 +331,10 @@ def start_bot(**kwargs):
             jobs_list.remove("telegram-reports")
             if configs.args.telegram_reports:
                 telegram_reports_at_end = True
+        if "slack-reports" in jobs_list:
+            jobs_list.remove("slack-reports")
+            if configs.args.slack_reports:
+                slack_reports_at_end = True
         print_limits = True
         unfollow_jobs = [x for x in jobs_list if "unfollow" in x]
         logger.info(
@@ -419,7 +425,7 @@ def start_bot(**kwargs):
         sessions.persist(directory=session_state.my_username)
 
         # print reports
-        if telegram_reports_at_end:
+        if telegram_reports_at_end or slack_reports_at_end:
             logger.info("Going back to your profile..")
             if not profile_view.click_on_avatar():
                 logger.warning("Could not navigate to profile for telegram report, skipping profile refresh.")
@@ -473,6 +479,13 @@ def start_bot(**kwargs):
                     following_now,
                     time_left,
                 )
+                print_slack_reports(
+                    configs,
+                    slack_reports_at_end,
+                    followers_now,
+                    following_now,
+                    time_left,
+                )
                 logger.info(
                     f'Next session will start at: {(datetime.now() + timedelta(seconds=time_left)).strftime("%H:%M:%S (%Y/%m/%d)")}.'
                 )
@@ -493,6 +506,13 @@ def start_bot(**kwargs):
                     following_now,
                     time_left.total_seconds(),
                 )
+                print_slack_reports(
+                    configs,
+                    slack_reports_at_end,
+                    followers_now,
+                    following_now,
+                    time_left.total_seconds(),
+                )
                 wait_for_next_session(
                     time_left,
                     session_state,
@@ -504,6 +524,12 @@ def start_bot(**kwargs):
     print_telegram_reports(
         configs,
         telegram_reports_at_end,
+        followers_now,
+        following_now,
+    )
+    print_slack_reports(
+        configs,
+        slack_reports_at_end,
         followers_now,
         following_now,
     )

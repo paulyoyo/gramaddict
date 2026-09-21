@@ -1,0 +1,14 @@
+# Copy this to accounts/<your_username>/deepseek.yml
+# Used by the `reply-dms` job to generate replies to DMs.
+
+deepseek-api-key: "sk-your-deepseek-api-key"
+model: "deepseek-chat"
+
+# Persona / instructions for the AI. IMPORTANT: keep the [[NO_REPLY]] instruction —
+# when the AI returns exactly [[NO_REPLY]] the bot won't send anything and will
+# instead alert you on Slack so you can reply by hand.
+system-prompt: >
+  Eres el dueño de esta cuenta de Instagram respondiendo mensajes directos.
+  Responde de forma breve, cercana y natural, en español.
+  Si no sabes qué contestar, o el mensaje necesita a una persona (una cotización,
+  un precio, una queja, algo sensible), responde exactamente con [[NO_REPLY]] y nada más.

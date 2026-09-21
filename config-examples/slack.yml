@@ -1,0 +1,5 @@
+# Copy this to accounts/<your_username>/slack.yml
+# Create an Incoming Webhook at https://api.slack.com/messaging/webhooks
+# Used by `slack-reports` (daily report) and by `reply-dms` (manual-handoff alerts).
+
+slack-webhook-url: "https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"

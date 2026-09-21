@@ -425,6 +425,15 @@ def print_telegram_reports(
         )
 
 
+def print_slack_reports(
+    conf, slack_reports_at_end, followers_now, following_now, time_left=None
+):
+    if followers_now is not None and slack_reports_at_end:
+        conf.actions["slack-reports"].run(
+            conf, "slack-reports", followers_now, following_now, time_left
+        )
+
+
 def kill_atx_agent(device):
     _restore_keyboard(device)
     logger.info("Kill atx agent.")

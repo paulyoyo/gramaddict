@@ -84,6 +84,12 @@ delete-removed-followers: true
 ## Post Processing
 # analytics: false # no more supported
 telegram-reports: false # for using telegram-reports you have also to configure telegram.yml in your account folder
+# slack-reports: true # end-of-session report to Slack; configure slack.yml (slack-webhook-url) in your account folder
+
+## Two-step DM AI auto-reply (step 2 of the DM flow)
+# reply-dms: true # once a day, check users you PM'd for replies and answer them with DeepSeek AI; configure deepseek.yml (and optionally slack.yml for manual-handoff alerts)
+# reply-dms-min-hours: 3 # wait at least this many hours after the first PM before checking for a reply
+# reply-dms-limit: 10 # max users to reply to per session (number or range, e.g. 10-15)
 
 ## Special actions
 # pre-script: pre_script_path_here

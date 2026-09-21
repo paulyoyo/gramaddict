@@ -26,6 +26,7 @@ FILENAME_MESSAGES = "pm_list.txt"
 FILENAME_SOURCE_POSITIONS = "source_positions.json"
 FILENAME_ELLA_MESSAGES = "pm_ella.txt"
 FILENAME_ELLA_COMMENTS = "comments_ella.txt"
+FILENAME_PENDING_REPLIES = "pending_dm_replies.json"
 
 
 class Storage:
@@ -40,6 +41,20 @@ class Storage:
             os.makedirs(self.account_path)
         self.interacted_users = {}
         self.history_filter_users = {}
+        self.pending_replies = []
+
+        self.pending_replies_path = os.path.join(
+            self.account_path, FILENAME_PENDING_REPLIES
+        )
+        if os.path.isfile(self.pending_replies_path):
+            with open(self.pending_replies_path, encoding="utf-8") as json_file:
+                try:
+                    self.pending_replies = json.load(json_file)
+                except Exception as e:
+                    logger.error(
+                        f"Please check {json_file.name}, it contains this error: {e}"
+                    )
+                    sys.exit(0)
 
         self.interacted_users_path = os.path.join(
             self.account_path, FILENAME_INTERACTED_USERS
@@ -281,6 +296,9 @@ class Storage:
         )
         self.interacted_users[username] = user
         self._update_file()
+        # Queue the user for a delayed AI reply check (two-step DM flow)
+        if pm_sent:
+            self.enqueue_pending_reply(username)
 
     def mark_ella_target(self, username: str) -> None:
         """Mark a user as an ELLA target interaction."""
@@ -313,6 +331,40 @@ class Storage:
                 self.interacted_users_path, overwrite=True, encoding="utf-8"
             ) as outfile:
                 json.dump(self.interacted_users, outfile, indent=4, sort_keys=False)
+
+    def _update_pending_replies_file(self):
+        if getattr(self, "pending_replies_path", None) is not None:
+            with atomic_write(
+                self.pending_replies_path, overwrite=True, encoding="utf-8"
+            ) as outfile:
+                json.dump(self.pending_replies, outfile, indent=4, sort_keys=False)
+
+    def enqueue_pending_reply(self, username):
+        """Append a user we just PM'd to the pending-reply queue (idempotent)."""
+        if any(entry.get("username") == username for entry in self.pending_replies):
+            return
+        self.pending_replies.append(
+            {
+                "username": username,
+                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+            }
+        )
+        self._update_pending_replies_file()
+
+    def get_pending_replies(self):
+        """Return the pending-reply queue: list of {username, sent_at}."""
+        return self.pending_replies
+
+    def remove_pending_reply(self, username):
+        """Drop a user from the pending-reply queue (replied or handed off)."""
+        before = len(self.pending_replies)
+        self.pending_replies = [
+            entry
+            for entry in self.pending_replies
+            if entry.get("username") != username
+        ]
+        if len(self.pending_replies) != before:
+            self._update_pending_replies_file()
 
 
 @unique
