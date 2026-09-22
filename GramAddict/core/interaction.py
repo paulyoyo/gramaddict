@@ -12,6 +12,7 @@ import spintax
 from colorama import Fore, Style
 
 from GramAddict.core import storage
+from GramAddict.core.deepseek import load_deepseek_config
 from GramAddict.core.device_facade import (
     DeviceFacade,
     Location,
@@ -69,6 +70,9 @@ def interact_with_user(
     scraping_file,
     current_mode,
     storage_instance=None,
+    target=None,
+    current_job=None,
+    greeting_sink=None,
 ) -> Tuple[bool, bool, bool, bool, bool, int, int, int]:
     """
     :return: (whether interaction succeed, whether @username was followed during the interaction, if you scraped that account, if you sent a PM, number of liked, number of watched, number of commented)
@@ -86,6 +90,18 @@ def interact_with_user(
     is_ella, ella_matched_name = profile_filter.is_ella_target(
         username, profile_data.biography if profile_data.biography else ""
     )
+
+    # First name (from the display name under the profile pic) and the source
+    # account we found them from — used by the DJ greeting flow.
+    first_name = ""
+    if getattr(profile_data, "fullname", None):
+        _name_parts = profile_data.fullname.strip().split()
+        if _name_parts:
+            first_name = _name_parts[0]
+    _is_follower_source = bool(current_job) and (
+        current_job.endswith("followers") or current_job.endswith("following")
+    )
+    dj_source = target if _is_follower_source else None
 
     if username == my_username:
         logger.info("It's you, skip.")
@@ -125,9 +141,9 @@ def interact_with_user(
             and can_send_PM(session_state, pm_percentage)
             and profile_filter.can_pm_to_private_or_empty
         ):
-            sent_pm = _send_PM(
+            sent_pm = _send_pm_or_greeting(
                 device, session_state, my_username, 0, profile_data.is_private,
-                is_ella_target=is_ella, ella_name=ella_matched_name
+                is_ella, ella_matched_name, first_name, dj_source, greeting_sink,
             )
             if sent_pm:
                 interacted = True
@@ -356,9 +372,9 @@ def interact_with_user(
             device.back()
 
     if pm_percentage != 0 and can_send_PM(session_state, pm_percentage):
-        sent_pm = _send_PM(
-            device, session_state, my_username, swipe_amount,
-            is_ella_target=is_ella, ella_name=ella_matched_name
+        sent_pm = _send_pm_or_greeting(
+            device, session_state, my_username, swipe_amount, False,
+            is_ella, ella_matched_name, first_name, dj_source, greeting_sink,
         )
         swipe_amount = 0
         if sent_pm:
@@ -715,6 +731,140 @@ def _comment(
                     direction=Direction.DOWN, delta_y=randint(150, 250)
                 )
     return False
+
+
+def build_greeting(config: dict, first_name: str, source: Optional[str]) -> str:
+    """Compose the step-1 DJ greeting from deepseek.yml templates.
+    {name} -> first name, source-context line added only when source is set."""
+    name = first_name.strip() if first_name else ""
+    # Defaults are Peruvian Spanish (tú form: "sigues"/"quieres"); override in deepseek.yml.
+    greetings = config.get("greetings") or ["¡Hola {name}!"]
+    greeting = choice(greetings).replace("{name}", name)
+    # Tidy up when the name is empty (e.g. "¡Hola !" -> "¡Hola!").
+    greeting = greeting.replace(" !", "!").replace(" ,", ",")
+    greeting = " ".join(greeting.split()).strip()
+    parts = [greeting]
+    source_ctx = config.get("source-context")
+    if source and source_ctx:
+        src = source if source.startswith("@") else f"@{source}"
+        parts.append(source_ctx.replace("{source}", src).strip())
+    mix_q = config.get("mix-question") or "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
+    parts.append(mix_q.strip())
+    return " ".join(p for p in parts if p)
+
+
+def _send_pm_or_greeting(
+    device,
+    session_state,
+    my_username,
+    swipe_amount,
+    private,
+    is_ella,
+    ella_matched_name,
+    first_name,
+    dj_source,
+    greeting_sink,
+) -> bool:
+    """Dispatch: DJ greeting flow when enabled, else the original pm_list PM."""
+    if getattr(args, "dj_greeting_mode", False):
+        ok = _send_greeting_PM(
+            device, session_state, my_username, swipe_amount, first_name, dj_source, private
+        )
+        if ok and greeting_sink is not None:
+            greeting_sink.update(
+                stage="greeted", first_name=first_name, source=dj_source
+            )
+        return ok
+    return _send_PM(
+        device,
+        session_state,
+        my_username,
+        swipe_amount,
+        private,
+        is_ella_target=is_ella,
+        ella_name=ella_matched_name,
+    )
+
+
+def _open_dm_thread(device, swipe_amount, private) -> bool:
+    """Open the DM composer for the profile currently on screen (shared by the
+    greeting and pm_list flows). Returns True if the composer is reachable."""
+    universal_actions = UniversalActions(device)
+    if private:
+        options = device.find(
+            classNameMatches=ClassName.FRAME_LAYOUT,
+            descriptionMatches=case_insensitive_re("^Options$"),
+        )
+        if not options.exists(Timeout.SHORT):
+            return False
+        options.click()
+        send_pm = device.find(
+            classNameMatches=ClassName.BUTTON,
+            textMatches=case_insensitive_re("^Send Message$"),
+        )
+        if not send_pm.exists(Timeout.SHORT):
+            return False
+        send_pm.click()
+    else:
+        coordinator_layout = device.find(resourceId=ResourceID.COORDINATOR_ROOT_LAYOUT)
+        if coordinator_layout.exists() and swipe_amount != 0:
+            universal_actions._swipe_points(direction=Direction.UP, delta_y=swipe_amount)
+        message_button = device.find(
+            classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+            enabled=True,
+            textMatches="Message",
+        )
+        if not message_button.exists(Timeout.SHORT):
+            logger.warning("Cannot find the button for sending PMs!")
+            return False
+        message_button.click()
+    return True
+
+
+def _send_greeting_PM(
+    device,
+    session_state: SessionState,
+    my_username: str,
+    swipe_amount: int,
+    first_name: str,
+    source: Optional[str],
+    private: bool = False,
+) -> bool:
+    """Step 1 of the DJ flow: send a templated greeting (not pm_list) and let the
+    reply-dms job take over the conversation. Text/links come from deepseek.yml."""
+    config = load_deepseek_config(my_username)
+    if not config:
+        logger.warning("DJ greeting enabled but no deepseek.yml found. Skipping.")
+        return False
+    message = build_greeting(config, first_name, source)
+    universal_actions = UniversalActions(device)
+    if not _open_dm_thread(device, swipe_amount, private):
+        return False
+    message_box = device.find(
+        resourceId=ResourceID.ROW_THREAD_COMPOSER_EDITTEXT,
+        className=ClassName.EDIT_TEXT,
+        enabled="true",
+    )
+    if not message_box.exists():
+        device.back()
+        return False
+    nl, nlv = "\n", "\\n"
+    logger.info(
+        f"Write greeting: {message.replace(nl, nlv)}", extra={"color": f"{Fore.CYAN}"}
+    )
+    message_box.set_text(message, Mode.PASTE if args.dont_type else Mode.TYPE)
+    send_button = device.find(resourceId=ResourceID.ROW_THREAD_COMPOSER_BUTTON_SEND)
+    if not send_button.exists():
+        universal_actions.close_keyboard(device)
+        device.back()
+        return False
+    send_button.click()
+    universal_actions.detect_block(device)
+    universal_actions.close_keyboard(device)
+    session_state.totalPm += 1
+    logger.info("Greeting sent.", extra={"color": f"{Fore.GREEN}"})
+    device.back()
+    return True
 
 
 def _send_PM(

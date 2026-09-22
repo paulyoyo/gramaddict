@@ -86,10 +86,18 @@ delete-removed-followers: true
 telegram-reports: false # for using telegram-reports you have also to configure telegram.yml in your account folder
 # slack-reports: true # end-of-session report to Slack; configure slack.yml (slack-webhook-url) in your account folder
 
-## Two-step DM AI auto-reply (step 2 of the DM flow)
-# reply-dms: true # once a day, check users you PM'd for replies and answer them with DeepSeek AI; configure deepseek.yml (and optionally slack.yml for manual-handoff alerts)
-# reply-dms-min-hours: 3 # wait at least this many hours after the first PM before checking for a reply
-# reply-dms-limit: 10 # max users to reply to per session (number or range, e.g. 10-15)
+## DJ two-step DM flow (AI messages, Spanish/Peru)
+# MASTER FLAG — turn the AI DM messages on/off here.
+# Step 1: greet users with a templated Spanish message (from deepseek.yml) instead of pm_list,
+# using their first name and (for followers sources) the account they follow, then ask if they
+# want to hear your new mix. Enqueues them for the reply conversation below.
+dj-greeting-mode: false # set to true to activate the AI DM greeting/campaign (needs deepseek.yml)
+# Step 2+ — once a day, check greeted users for replies. DeepSeek classifies interest; the bot
+# sends your YouTube link, asks about SoundCloud, then sends the SoundCloud link. Unsure -> Slack.
+# Uncomment reply-dms to enable the daily AI reply job (value-based flag: comment out to disable).
+# reply-dms: true
+# reply-dms-min-hours: 3 # wait at least this many hours after the last message before checking
+# reply-dms-limit: 10 # max users to process per session (number or range, e.g. 10-15)
 
 ## Special actions
 # pre-script: pre_script_path_here

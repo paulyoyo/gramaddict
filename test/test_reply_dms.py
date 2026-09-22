@@ -1,4 +1,4 @@
-"""Focused checks for the two-step DM auto-reply feature.
+"""Focused checks for the DJ two-step DM flow.
 
 Modules are loaded standalone (by file path) so these run without the heavy
 uiautomator2/colorama device stack — only atomicwrites/requests are needed.
@@ -32,20 +32,26 @@ def _hours_ago(hours):
     return (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def test_enqueue_get_remove_and_idempotent():
+def test_queue_enqueue_update_remove():
     with tempfile.TemporaryDirectory() as tmp:
         s = _new_storage(tmp)
         assert s.get_pending_replies() == []
 
-        s.enqueue_pending_reply("alice")
-        s.enqueue_pending_reply("alice")  # idempotent
-        s.enqueue_pending_reply("bob")
-        names = [e["username"] for e in s.get_pending_replies()]
-        assert names == ["alice", "bob"], names
+        s.enqueue_pending_reply("alice", stage="greeted", first_name="Alice", source="@club")
+        s.enqueue_pending_reply("alice", stage="greeted")  # idempotent
+        s.enqueue_pending_reply("bob", stage="greeted", first_name="Bob", source=None)
+        q = s.get_pending_replies()
+        assert [e["username"] for e in q] == ["alice", "bob"]
+        assert q[0]["stage"] == "greeted"
+        assert q[0]["first_name"] == "Alice"
+        assert q[0]["source"] == "@club"
 
-        # Persisted to disk and reloaded on a fresh Storage
-        s2 = _new_storage(tmp)
-        assert [e["username"] for e in s2.get_pending_replies()] == ["alice", "bob"]
+        # Advance a stage (and refresh sent_at)
+        s.update_pending_reply("alice", stage="sent_youtube", sent_at="2020-01-01 00:00:00.000000")
+        s2 = _new_storage(tmp)  # reload from disk
+        alice = next(e for e in s2.get_pending_replies() if e["username"] == "alice")
+        assert alice["stage"] == "sent_youtube"
+        assert alice["sent_at"] == "2020-01-01 00:00:00.000000"
 
         s2.remove_pending_reply("alice")
         assert [e["username"] for e in s2.get_pending_replies()] == ["bob"]
@@ -53,13 +59,12 @@ def test_enqueue_get_remove_and_idempotent():
         assert [e["username"] for e in s2.get_pending_replies()] == ["bob"]
 
 
-def test_add_interacted_user_enqueues_only_on_pm():
+def test_add_interacted_user_does_not_touch_queue():
+    # pm_list sending is kept separate from the DJ conversation queue.
     with tempfile.TemporaryDirectory() as tmp:
         s = _new_storage(tmp)
-        s.add_interacted_user("noreply", session_id="s1", liked=1)  # pm_sent defaults False
-        assert s.get_pending_replies() == []
         s.add_interacted_user("pmd", session_id="s1", pm_sent=True)
-        assert [e["username"] for e in s.get_pending_replies()] == ["pmd"]
+        assert s.get_pending_replies() == []
 
 
 def test_min_hours_filter():
@@ -79,7 +84,7 @@ def test_min_hours_filter():
         assert due == ["old"], due
 
 
-def test_deepseek_sentinel_passthrough(monkeypatch=None):
+def test_classify_intent():
     class FakeResp:
         def __init__(self, content):
             self._content = content
@@ -92,28 +97,31 @@ def test_deepseek_sentinel_passthrough(monkeypatch=None):
 
     cfg = {"deepseek-api-key": "sk-test"}
 
-    # Sentinel is returned verbatim so the caller can branch to manual handoff.
-    deepseek_mod.requests.post = lambda *a, **k: FakeResp(deepseek_mod.NO_REPLY)
-    assert deepseek_mod.generate_reply(cfg, "hola") == deepseek_mod.NO_REPLY
+    for content, expected in [
+        ("YES", deepseek_mod.YES),
+        ("yes, definitely", deepseek_mod.YES),
+        ("NO", deepseek_mod.NO),
+        ("no thanks", deepseek_mod.NO),
+        ("maybe later", deepseek_mod.UNSURE),
+        ("¿quién eres?", deepseek_mod.UNSURE),
+    ]:
+        deepseek_mod.requests.post = lambda *a, **k: FakeResp(content)
+        assert deepseek_mod.classify_intent(cfg, "Interested?", "x") == expected, content
 
-    # Normal reply passes through (trimmed).
-    deepseek_mod.requests.post = lambda *a, **k: FakeResp("  hey there  ")
-    assert deepseek_mod.generate_reply(cfg, "hola") == "hey there"
-
-    # Network/parse error -> None (treated as needs-manual by caller).
+    # Network error -> UNSURE (falls back to human)
     def boom(*a, **k):
         raise RuntimeError("network down")
 
     deepseek_mod.requests.post = boom
-    assert deepseek_mod.generate_reply(cfg, "hola") is None
+    assert deepseek_mod.classify_intent(cfg, "Interested?", "x") == deepseek_mod.UNSURE
 
-    # Missing api key -> None, no call made.
-    assert deepseek_mod.generate_reply({}, "hola") is None
+    # Missing api key -> UNSURE, no call
+    assert deepseek_mod.classify_intent({}, "Interested?", "x") == deepseek_mod.UNSURE
 
 
 if __name__ == "__main__":
-    test_enqueue_get_remove_and_idempotent()
-    test_add_interacted_user_enqueues_only_on_pm()
+    test_queue_enqueue_update_remove()
+    test_add_interacted_user_does_not_touch_queue()
     test_min_hours_filter()
-    test_deepseek_sentinel_passthrough()
-    print("all reply-dms checks passed")
+    test_classify_intent()
+    print("all DJ DM-flow checks passed")

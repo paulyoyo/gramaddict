@@ -1,13 +1,15 @@
 import logging
 import os
 from datetime import datetime
-from random import randint, shuffle
+from random import choice, randint, shuffle
 
 from colorama import Fore
 
 from GramAddict.core.deepseek import (
-    NO_REPLY,
-    generate_reply,
+    NO,
+    UNSURE,
+    YES,
+    classify_intent,
     load_deepseek_config,
 )
 from GramAddict.core.device_facade import Mode, Timeout
@@ -26,23 +28,33 @@ COOLDOWN_MIN_HOURS = 20
 COOLDOWN_MAX_HOURS = 28
 COOLDOWN_FILE = "dm_reply_last_run.txt"
 
+# Questions posed to the DeepSeek classifier at each conversation stage.
+Q_INTERESTED = "Does this reply show the person is interested in listening to the mix?"
+Q_SOUNDCLOUD = "Does this reply say they use SoundCloud (or want the SoundCloud link)?"
+
+# Peruvian Spanish defaults (override in deepseek.yml).
+DEFAULT_YT_MSG = "¡Genial! Aquí está: {link} 🔥 ¿También usas SoundCloud?"
+DEFAULT_SC_MSG = "Aquí está la versión de SoundCloud: {link} 🎧"
+
 
 class ActionReplyDMs(Plugin):
-    """Second step of the two-step DM flow: check users we PM'd for replies and
-    answer them with a DeepSeek-generated message. Runs at most once per day."""
+    """Step 2+ of the DJ DM flow: read replies from users we greeted and drive a
+    short, templated conversation (YouTube link -> ask SoundCloud -> SoundCloud
+    link). DeepSeek only classifies intent; the code owns all text and links.
+    Runs at most once per day."""
 
     def __init__(self):
         super().__init__()
         self.description = (
-            "Check earlier PM recipients for replies and answer them via the DeepSeek AI. "
-            "Runs once every ~24h. Configure 'deepseek.yml' (and optionally 'slack.yml' for "
-            "manual-handoff alerts) in your account folder."
+            "Read replies from users you greeted and continue the conversation "
+            "(send YouTube link, ask about SoundCloud, send SoundCloud link). "
+            "Runs once every ~24h. Configure 'deepseek.yml' (and optionally 'slack.yml')."
         )
         self.arguments = [
             {
                 "arg": "--reply-dms",
                 "nargs": None,
-                "help": "check users we PM'd for replies and answer them with DeepSeek AI",
+                "help": "check greeted users for replies and continue the DJ conversation",
                 "metavar": "true",
                 "default": None,
                 "operation": True,
@@ -50,16 +62,21 @@ class ActionReplyDMs(Plugin):
             {
                 "arg": "--reply-dms-min-hours",
                 "nargs": None,
-                "help": "minimum hours to wait after the first PM before checking for a reply",
+                "help": "minimum hours to wait after the last message before checking for a reply",
                 "metavar": "3",
                 "default": "3",
             },
             {
                 "arg": "--reply-dms-limit",
                 "nargs": None,
-                "help": "max number of users to reply to per session (number or range)",
+                "help": "max number of users to process per session (number or range)",
                 "metavar": "10",
                 "default": "10",
+            },
+            {
+                "arg": "--dj-greeting-mode",
+                "help": "step 1: send templated greetings (from deepseek.yml) instead of pm_list, and queue users for the AI reply conversation",
+                "action": "store_true",
             },
         ]
 
@@ -77,7 +94,8 @@ class ActionReplyDMs(Plugin):
             return
 
         slack_config = load_slack_config(username)
-        slack_webhook = slack_config.get("slack-webhook-url") if slack_config else None
+        self.slack_webhook = slack_config.get("slack-webhook-url") if slack_config else None
+        self.cfg = deepseek_config
 
         min_hours = get_value(self.args.reply_dms_min_hours, "Reply DMs min hours: {}", 3)
         limit = get_value(self.args.reply_dms_limit, "Reply DMs limit: {}", 10)
@@ -91,28 +109,27 @@ class ActionReplyDMs(Plugin):
         pending = pending[:limit]
 
         if not pending:
-            logger.info("No PM recipients due for a reply check.")
+            logger.info("No greeted users due for a reply check.")
             self._mark_completed(storage)
             return
 
         logger.info(
-            f"Checking {len(pending)} user(s) for replies to our DMs.",
+            f"Checking {len(pending)} user(s) for replies.",
             extra={"color": f"{Fore.BLUE}"},
         )
         for entry in pending:
             target = entry.get("username")
             try:
-                self._process_user(
-                    device, storage, target, deepseek_config, slack_webhook, plugin
-                )
+                self._process_user(device, storage, entry, plugin)
             except Exception as e:
-                logger.error(f"Error while checking @{target} for a reply: {e}")
+                logger.error(f"Error while handling @{target}: {e}")
 
         self._mark_completed(storage)
 
-    def _process_user(
-        self, device, storage, target, deepseek_config, slack_webhook, plugin
-    ):
+    def _process_user(self, device, storage, entry, plugin):
+        target = entry.get("username")
+        stage = entry.get("stage", "greeted")
+
         # Open ONLY this user's thread, via their profile — never the general
         # inbox — so unrelated inbound messages are never opened or marked read.
         search_view = TabBarView(device).navigateToSearch()
@@ -133,37 +150,71 @@ class ActionReplyDMs(Plugin):
 
         reply_text = self._read_last_reply(device)
         if not reply_text:
-            # No reply yet — leave in queue, retry on the next daily check.
             logger.info(f"@{target} hasn't replied yet. Keeping in queue.")
             device.back()
             return
 
-        logger.info(f"@{target} replied: {reply_text!r}")
-        ai_reply = generate_reply(deepseek_config, reply_text)
+        logger.info(f"@{target} (stage={stage}) replied: {reply_text!r}")
 
-        if not ai_reply or ai_reply == NO_REPLY:
-            # DeepSeek isn't confident — hand off to the human via Slack.
-            logger.info(
-                f"DeepSeek can't confidently reply to @{target}. Alerting via Slack.",
-                extra={"color": f"{Fore.YELLOW}"},
-            )
-            if slack_webhook:
-                slack_send_text(
-                    slack_webhook,
-                    f":warning: Manual reply needed for @{target}: {reply_text}",
-                )
-            else:
-                logger.warning("No slack.yml webhook configured; can't alert for handoff.")
+        if stage == "greeted":
+            self._handle_greeted(device, storage, target, reply_text)
+        elif stage == "sent_youtube":
+            self._handle_sent_youtube(device, storage, target, reply_text)
+        else:
+            logger.warning(f"Unknown stage {stage!r} for @{target}; dropping.")
             storage.remove_pending_reply(target)
-            device.back()
-            return
+        device.back()
 
-        if self._send_reply(device, ai_reply):
-            logger.info(f"Replied to @{target}.", extra={"color": f"{Fore.GREEN}"})
+    def _handle_greeted(self, device, storage, target, reply_text):
+        intent = classify_intent(self.cfg, Q_INTERESTED, reply_text)
+        if intent == YES:
+            msg = self._fill(self.cfg.get("youtube-messages"), DEFAULT_YT_MSG, self.cfg.get("youtube-link"))
+            if msg and self._send_reply(device, msg):
+                logger.info(f"Sent YouTube link to @{target}.", extra={"color": f"{Fore.GREEN}"})
+                storage.update_pending_reply(target, stage="sent_youtube", sent_at=self._now())
+            else:
+                logger.warning(f"Could not send YouTube message to @{target}. Keeping in queue.")
+        elif intent == NO:
+            logger.info(f"@{target} not interested. Dropping.")
             storage.remove_pending_reply(target)
         else:
-            logger.warning(f"Failed to send reply to @{target}. Keeping in queue.")
-        device.back()
+            self._handoff(target, reply_text, storage)
+
+    def _handle_sent_youtube(self, device, storage, target, reply_text):
+        intent = classify_intent(self.cfg, Q_SOUNDCLOUD, reply_text)
+        if intent == YES:
+            msg = self._fill(self.cfg.get("soundcloud-messages"), DEFAULT_SC_MSG, self.cfg.get("soundcloud-link"))
+            if msg and self._send_reply(device, msg):
+                logger.info(f"Sent SoundCloud link to @{target}. Done.", extra={"color": f"{Fore.GREEN}"})
+            else:
+                logger.warning(f"Could not send SoundCloud message to @{target}.")
+            storage.remove_pending_reply(target)
+        elif intent == NO:
+            logger.info(f"@{target} doesn't use SoundCloud. Done.")
+            storage.remove_pending_reply(target)
+        else:
+            self._handoff(target, reply_text, storage)
+
+    def _handoff(self, target, reply_text, storage):
+        logger.info(
+            f"DeepSeek unsure about @{target}'s reply. Alerting via Slack for manual handling.",
+            extra={"color": f"{Fore.YELLOW}"},
+        )
+        if self.slack_webhook:
+            slack_send_text(
+                self.slack_webhook,
+                f":warning: Manual reply needed for @{target}: {reply_text}",
+            )
+        else:
+            logger.warning("No slack.yml webhook configured; can't alert for handoff.")
+        storage.remove_pending_reply(target)
+
+    def _fill(self, templates, default_template, link):
+        if not link:
+            logger.error("No link configured in deepseek.yml for this step. Skipping send.")
+            return None
+        template = choice(templates) if templates else default_template
+        return template.replace("{link}", link)
 
     def _read_last_reply(self, device):
         """Return the text of the user's latest reply bubble, or None.
@@ -200,6 +251,10 @@ class ActionReplyDMs(Plugin):
             return False
         send_button.click()
         return True
+
+    @staticmethod
+    def _now():
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
     @staticmethod
     def _hours_since(timestamp_str) -> float:

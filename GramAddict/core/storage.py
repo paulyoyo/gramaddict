@@ -296,9 +296,6 @@ class Storage:
         )
         self.interacted_users[username] = user
         self._update_file()
-        # Queue the user for a delayed AI reply check (two-step DM flow)
-        if pm_sent:
-            self.enqueue_pending_reply(username)
 
     def mark_ella_target(self, username: str) -> None:
         """Mark a user as an ELLA target interaction."""
@@ -339,20 +336,29 @@ class Storage:
             ) as outfile:
                 json.dump(self.pending_replies, outfile, indent=4, sort_keys=False)
 
-    def enqueue_pending_reply(self, username):
-        """Append a user we just PM'd to the pending-reply queue (idempotent)."""
+    def enqueue_pending_reply(self, username, **fields):
+        """Append a user we just messaged to the pending-reply queue (idempotent).
+        Extra fields (stage, first_name, source, ...) are stored on the entry."""
         if any(entry.get("username") == username for entry in self.pending_replies):
             return
-        self.pending_replies.append(
-            {
-                "username": username,
-                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
-            }
-        )
+        entry = {
+            "username": username,
+            "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+        }
+        entry.update(fields)
+        self.pending_replies.append(entry)
         self._update_pending_replies_file()
 
+    def update_pending_reply(self, username, **fields):
+        """Update fields on a queued entry (e.g. advance stage, refresh sent_at)."""
+        for entry in self.pending_replies:
+            if entry.get("username") == username:
+                entry.update(fields)
+                self._update_pending_replies_file()
+                return
+
     def get_pending_replies(self):
-        """Return the pending-reply queue: list of {username, sent_at}."""
+        """Return the pending-reply queue: list of {username, sent_at, stage, ...}."""
         return self.pending_replies
 
     def remove_pending_reply(self, username):

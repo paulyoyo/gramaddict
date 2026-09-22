@@ -6,19 +6,21 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Sentinel the model is told to return when it can't confidently reply.
-# The caller treats this (and any None/empty) as "needs a human".
-NO_REPLY = "[[NO_REPLY]]"
+# Classification results.
+YES = "YES"
+NO = "NO"
+UNSURE = "UNSURE"
 
 DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_SYSTEM_PROMPT = (
-    "You are replying to Instagram direct messages on behalf of the account owner. "
-    "Keep replies short, friendly and natural. "
-    f"If you are unsure how to answer, or the message needs a human (a price quote, "
-    f"a complaint, anything sensitive), reply with exactly {NO_REPLY} and nothing else."
-)
-
 API_URL = "https://api.deepseek.com/chat/completions"
+
+_CLASSIFIER_SYSTEM = (
+    "You are a strict intent classifier for Instagram DM replies. "
+    "Messages are usually in Spanish (Peru). "
+    "Given a yes/no question about a user's message, answer with exactly ONE word: "
+    "YES, NO, or UNSURE. Answer UNSURE if the message is ambiguous, off-topic, a "
+    "question back, or needs a human. Output only the single word."
+)
 
 
 def load_deepseek_config(username) -> Optional[dict]:
@@ -30,15 +32,16 @@ def load_deepseek_config(username) -> Optional[dict]:
         return None
 
 
-def generate_reply(config: dict, incoming_text: str) -> Optional[str]:
-    """Ask DeepSeek for a reply. Returns the reply text, the NO_REPLY sentinel,
-    or None on error. Mirrors the outbound-HTTP pattern in plugins/telegram.py."""
+def classify_intent(config: dict, question: str, reply_text: str) -> str:
+    """Ask DeepSeek a yes/no question about the user's reply.
+
+    Returns YES, NO, or UNSURE. Any error / unparseable answer -> UNSURE so the
+    caller falls back to a human (Slack handoff) rather than guessing."""
     api_key = config.get("deepseek-api-key")
     if not api_key:
         logger.error("No 'deepseek-api-key' in deepseek.yml.")
-        return None
+        return UNSURE
     model = config.get("model", DEFAULT_MODEL)
-    system_prompt = config.get("system-prompt", DEFAULT_SYSTEM_PROMPT)
     try:
         resp = requests.post(
             API_URL,
@@ -49,14 +52,22 @@ def generate_reply(config: dict, incoming_text: str) -> Optional[str]:
             json={
                 "model": model,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": incoming_text},
+                    {"role": "system", "content": _CLASSIFIER_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": f'Question: {question}\nUser message: "{reply_text}"\nAnswer:',
+                    },
                 ],
             },
             timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        answer = resp.json()["choices"][0]["message"]["content"].strip().upper()
     except Exception as e:
         logger.error(f"Error calling DeepSeek: {e}")
-        return None
+        return UNSURE
+    if answer.startswith(YES):
+        return YES
+    if answer.startswith(NO):
+        return NO
+    return UNSURE

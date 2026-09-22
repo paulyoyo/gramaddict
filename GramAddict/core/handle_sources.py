@@ -63,6 +63,7 @@ def interact(
             username
         ) in [FollowingStatus.NONE, FollowingStatus.NOT_IN_LIST]
 
+    greeting_sink = {}
     (
         interaction_succeed,
         followed,
@@ -72,7 +73,14 @@ def interact(
         number_of_liked,
         number_of_watched,
         number_of_comments,
-    ) = interaction(device, username=username, can_follow=can_follow)
+    ) = interaction(
+        device,
+        username=username,
+        can_follow=can_follow,
+        target=target,
+        current_job=current_job,
+        greeting_sink=greeting_sink,
+    )
 
     add_interacted_user = partial(
         storage.add_interacted_user,
@@ -91,6 +99,9 @@ def interact(
         commented=number_of_comments,
         pm_sent=pm_sent,
     )
+    # DJ greeting flow: queue the greeted user for the reply/AI conversation step.
+    if greeting_sink:
+        storage.enqueue_pending_reply(username, **greeting_sink)
     return on_interaction(
         succeed=interaction_succeed,
         followed=followed,

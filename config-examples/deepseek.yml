@@ -1,14 +1,36 @@
 # Copy this to accounts/<your_username>/deepseek.yml
-# Used by the `reply-dms` job to generate replies to DMs.
+# Drives the DJ DM flow: the greeting (step 1) and the AI-classified reply
+# conversation (step 2+). DeepSeek is used ONLY to classify the user's reply as
+# YES/NO/UNSURE — all message text and links below are inserted by the bot, so
+# the links can never be mangled by the AI.
 
 deepseek-api-key: "sk-your-deepseek-api-key"
 model: "deepseek-chat"
 
-# Persona / instructions for the AI. IMPORTANT: keep the [[NO_REPLY]] instruction —
-# when the AI returns exactly [[NO_REPLY]] the bot won't send anything and will
-# instead alert you on Slack so you can reply by hand.
-system-prompt: >
-  Eres el dueño de esta cuenta de Instagram respondiendo mensajes directos.
-  Responde de forma breve, cercana y natural, en español.
-  Si no sabes qué contestar, o el mensaje necesita a una persona (una cotización,
-  un precio, una queja, algo sensible), responde exactamente con [[NO_REPLY]] y nada más.
+# Your links (inserted verbatim by the bot).
+youtube-link: "https://youtu.be/your-mix"
+soundcloud-link: "https://soundcloud.com/you/your-mix"
+
+# All user-facing text is Spanish (Peru) — tú form (sigues/quieres/usas), no voseo.
+# --- Step 1: greeting templates (dj-greeting-mode) ---
+# {name} = the person's first name (from their profile). Keep several variants
+# so the greeting isn't identical every time (helps avoid spam detection).
+greetings:
+  - "¡Hola {name}! 👋"
+  - "¡Qué tal, {name}! 🙌"
+  - "¡Hey {name}!"
+# Added ONLY when the user was found via a followers/following source.
+# {source} = the account they follow (e.g. @theclub).
+source-context: "Vi que sigues a {source} 🎶"
+# The ask, appended to every greeting.
+mix-question: "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
+
+# --- Step 2+: reply templates. {link} is replaced with the links above. ---
+# Sent when the user shows interest in the mix.
+youtube-messages:
+  - "¡Genial! Aquí está: {link} 🔥 ¿También usas SoundCloud?"
+  - "¡Buenísimo! Escúchalo aquí: {link} 🎧 ¿Estás en SoundCloud también?"
+# Sent when the user says they use SoundCloud.
+soundcloud-messages:
+  - "Aquí está la versión de SoundCloud: {link} 🎧"
+  - "Listo, te paso el SoundCloud: {link} 🙏"
