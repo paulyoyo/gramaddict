@@ -459,14 +459,19 @@ class Filter:
                 logger.debug(
                     "Checking if account has blacklisted words in biography..."
                 )
-                # If we found a blacklist word return False
+                # If we found a blacklist word return False. Scan the bio AND
+                # the display name — DJs usually put "DJ" in the name, not bio.
+                # Normalize so "DJ2024" / "carlos_dj" also hit the word boundary.
+                name_and_bio = self._normalize_for_blacklist(
+                    f"{profile_data.fullname} {cleaned_biography}"
+                )
                 for w in field_blacklist_words:
                     blacklist_words = re.compile(
                         r"\b({0})\b".format(w), flags=re.IGNORECASE
-                    ).search(cleaned_biography)
+                    ).search(name_and_bio)
                     if blacklist_words is not None:
                         logger.info(
-                            f"@{username} found a blacklisted word '{w}' in biography, skip.",
+                            f"@{username} found a blacklisted word '{w}' in name/biography, skip.",
                             extra={"color": f"{Fore.CYAN}"},
                         )
                         return profile_data, self.return_check_profile(
@@ -843,8 +848,14 @@ class Filter:
         profileView = ProfileView(device) if profileView is None else profileView
         return profileView.getLinkInBio()
 
+    @staticmethod
+    def _normalize_for_blacklist(text: str) -> str:
+        """Turn separators/digits into spaces so word-boundary search can find
+        'dj' in 'carlos_dj_music' or 'DJ2024'. Glued letters stay glued."""
+        return re.sub(r"[\W\d_]+", " ", text.lower())
+
     def is_handler_blacklisted(self, username: str) -> bool:
-        """Check if username starts or ends with blacklisted words"""
+        """Skip if a blacklisted word appears anywhere in the username handle."""
         if self.conditions is None:
             return False
 
@@ -855,11 +866,13 @@ class Filter:
 
         username_lower = username.lower()
 
+        # Aggressive substring match: a handle is identity, not prose, so
+        # "dj" anywhere (djcarlos, carlos_dj, thedjmusic) is a DJ. Accepts
+        # rare false positives (e.g. "dj" inside "adjani") by design.
         for word in field_blacklist_words:
-            word_lower = word.lower()
-            if username_lower.startswith(word_lower) or username_lower.endswith(word_lower):
+            if word.lower() in username_lower:
                 logger.info(
-                    f"@{username} handler starts/ends with blacklisted word '{word}', skip.",
+                    f"@{username} handler contains blacklisted word '{word}', skip.",
                     extra={"color": f"{Fore.CYAN}"},
                 )
                 return True
