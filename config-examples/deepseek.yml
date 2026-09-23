@@ -19,8 +19,9 @@ greetings:
   - "¡Hola {name}! 👋"
   - "¡Qué tal, {name}! 🙌"
   - "¡Hey {name}!"
-# Added ONLY when the user was found via a followers/following source.
-# {source} = the account they follow (e.g. @theclub).
+# Added when the user was found via a followers/following OR post-likers source
+# (i.e. blogger-followers / blogger-following / blogger-post-likers). NOT added for
+# the plain "blogger" job (which is skipped entirely). {source} = the blogger account.
 source-context: "Vi que sigues a {source} 🎶"
 # The ask, appended to every greeting.
 mix-question: "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"

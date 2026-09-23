@@ -153,6 +153,14 @@ def start_bot(**kwargs):
 
         logger.info("Device screen ON and unlocked.")
         if open_instagram(device):
+            if UniversalActions.detect_checkpoint(device):
+                logger.error(
+                    "Instagram is asking to confirm you're human. Halting the bot so "
+                    "you can solve it by hand. Resume gently — resolve the checkpoint, "
+                    "browse manually for a bit, then restart at reduced volume.",
+                    extra={"color": f"{Style.BRIGHT}{Fore.RED}"},
+                )
+                stop_bot(device, sessions, session_state, was_sleeping=False)
             try:
                 running_ig_version = get_instagram_version()
                 logger.info(f"Instagram version: {running_ig_version}")

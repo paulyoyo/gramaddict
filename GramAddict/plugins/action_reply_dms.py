@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 from random import choice, randint, shuffle
+from time import sleep
 
 from colorama import Fore
 
@@ -72,6 +73,13 @@ class ActionReplyDMs(Plugin):
                 "help": "max number of users to process per session (number or range)",
                 "metavar": "10",
                 "default": "10",
+            },
+            {
+                "arg": "--reply-dms-delay",
+                "nargs": None,
+                "help": "seconds to pause before sending each reply, so it doesn't look instant (number or range). ~10%% of replies get an extra long pause.",
+                "metavar": "15-90",
+                "default": "15-90",
             },
             {
                 "arg": "--dj-greeting-mode",
@@ -169,6 +177,7 @@ class ActionReplyDMs(Plugin):
         intent = classify_intent(self.cfg, Q_INTERESTED, reply_text)
         if intent == YES:
             msg = self._fill(self.cfg.get("youtube-messages"), DEFAULT_YT_MSG, self.cfg.get("youtube-link"))
+            self._human_reply_pause(target)
             if msg and self._send_reply(device, msg):
                 logger.info(f"Sent YouTube link to @{target}.", extra={"color": f"{Fore.GREEN}"})
                 storage.update_pending_reply(target, stage="sent_youtube", sent_at=self._now())
@@ -184,6 +193,7 @@ class ActionReplyDMs(Plugin):
         intent = classify_intent(self.cfg, Q_SOUNDCLOUD, reply_text)
         if intent == YES:
             msg = self._fill(self.cfg.get("soundcloud-messages"), DEFAULT_SC_MSG, self.cfg.get("soundcloud-link"))
+            self._human_reply_pause(target)
             if msg and self._send_reply(device, msg):
                 logger.info(f"Sent SoundCloud link to @{target}. Done.", extra={"color": f"{Fore.GREEN}"})
             else:
@@ -234,6 +244,15 @@ class ActionReplyDMs(Plugin):
             if text:
                 last_text = text
         return last_text
+
+    def _human_reply_pause(self, target):
+        # Replying in <1s is the one evidence-backed bot tell (velocity detection).
+        # Draw a randomized pause; ~10% of the time add a "stepped away" long tail.
+        delay = get_value(self.args.reply_dms_delay, None, 45)
+        if randint(1, 10) == 1:
+            delay += randint(60, 180)
+        logger.info(f"Waiting {delay}s before replying to @{target} (human-like).")
+        sleep(delay)
 
     def _send_reply(self, device, text) -> bool:
         message_box = device.find(

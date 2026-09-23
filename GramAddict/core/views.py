@@ -2325,7 +2325,7 @@ class UniversalActions:
 
     @staticmethod
     def detect_block(device) -> bool:
-        if not args.disable_block_detection:
+        if args.disable_block_detection:
             return False
         logger.debug("Checking for block...")
         if "blocked" in device.deviceV2.toast.get_message(1.0, 2.0, default=""):
@@ -2366,6 +2366,37 @@ class UniversalActions:
             raise ActionBlockedError(
                 "Seems that action is blocked. Consider reinstalling Instagram app and be more careful with limits!"
             )
+
+    # Full-screen "confirm you're human" / suspicious-activity challenge phrases.
+    # This is NOT the action-block popup (detect_block) — it means the account is
+    # under review, and poking the UI further only makes it worse. English only
+    # (Instagram must be set to English), matched full-string so wrapped in .*.
+    CHECKPOINT_PHRASES = [
+        r"confirm it'?s you",
+        r"confirm you'?re (a )?human",
+        r"confirm your identity",
+        r"we suspect automated behavior",
+        r"we detected (unusual|suspicious|automated)",
+        r"we noticed (unusual|suspicious) activity",
+        r"suspicious login activity",
+        r"help us confirm",
+        r"your account has been (temporarily )?(suspended|disabled|restricted)",
+        r"we limit how often",
+    ]
+
+    @staticmethod
+    def detect_checkpoint(device) -> bool:
+        """True if Instagram is showing a checkpoint / 'confirm you're human'
+        screen. Caller should halt automation immediately."""
+        pattern = "(?i).*(" + "|".join(UniversalActions.CHECKPOINT_PHRASES) + ").*"
+        match = device.find(textMatches=pattern)
+        if match.exists(Timeout.SHORT):
+            logger.error(
+                "Checkpoint / 'confirm you're human' screen detected: "
+                f"{match.get_text(error=False)!r}"
+            )
+            return True
+        return False
 
     def _check_if_no_posts(self) -> bool:
         obj = self.device.find(resourceId=ResourceID.IGDS_HEADLINE_EMPHASIZED_HEADLINE)

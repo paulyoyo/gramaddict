@@ -98,10 +98,12 @@ def interact_with_user(
         _name_parts = profile_data.fullname.strip().split()
         if _name_parts:
             first_name = _name_parts[0]
-    _is_follower_source = bool(current_job) and (
-        current_job.endswith("followers") or current_job.endswith("following")
+    # Add the "I saw you follow @source" line for followers/following AND
+    # post-likers sources (all have a real source account: the blogger).
+    _has_source = bool(current_job) and current_job.endswith(
+        ("followers", "following", "post-likers")
     )
-    dj_source = target if _is_follower_source else None
+    dj_source = target if _has_source else None
 
     if username == my_username:
         logger.info("It's you, skip.")
@@ -144,6 +146,7 @@ def interact_with_user(
             sent_pm = _send_pm_or_greeting(
                 device, session_state, my_username, 0, profile_data.is_private,
                 is_ella, ella_matched_name, first_name, dj_source, greeting_sink,
+                current_job,
             )
             if sent_pm:
                 interacted = True
@@ -375,6 +378,7 @@ def interact_with_user(
         sent_pm = _send_pm_or_greeting(
             device, session_state, my_username, swipe_amount, False,
             is_ella, ella_matched_name, first_name, dj_source, greeting_sink,
+            current_job,
         )
         swipe_amount = 0
         if sent_pm:
@@ -764,9 +768,17 @@ def _send_pm_or_greeting(
     first_name,
     dj_source,
     greeting_sink,
+    current_job=None,
 ) -> bool:
     """Dispatch: DJ greeting flow when enabled, else the original pm_list PM."""
     if getattr(args, "dj_greeting_mode", False):
+        # Never send AI messages to the blogger accounts themselves.
+        if current_job == "blogger":
+            logger.info(
+                "dj-greeting-mode: skipping AI message to blogger account.",
+                extra={"color": f"{Fore.YELLOW}"},
+            )
+            return False
         ok = _send_greeting_PM(
             device, session_state, my_username, swipe_amount, first_name, dj_source, private
         )
