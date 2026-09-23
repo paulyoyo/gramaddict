@@ -292,7 +292,7 @@ class Filter:
             f"This account is {'private' if profile_data.is_private else 'public'}."
         )
 
-        if profile_data.is_private and field_skip_if_public:
+        if profile_data.is_private is False and field_skip_if_public:
             logger.info(
                 f"@{username} has public account and you want to interact only private, skip.",
                 extra={"color": f"{Fore.CYAN}"},
@@ -589,13 +589,10 @@ class Filter:
         )
 
     def can_pm_to_private_or_empty(self) -> bool:
+        # Default True: private/empty accounts get PMs unless filters.yml opts out.
         if self.conditions is None:
-            return False
-
-        field_pm_to_private_or_empty = self.conditions.get(FIELD_PM_TO_PRIVATE_OR_EMPTY)
-        return field_pm_to_private_or_empty is not None and bool(
-            field_pm_to_private_or_empty
-        )
+            return True
+        return bool(self.conditions.get(FIELD_PM_TO_PRIVATE_OR_EMPTY, True))
 
     def can_comment(self, current_mode) -> Tuple[bool, bool, bool, bool]:
         if self.conditions is not None:

@@ -139,7 +139,7 @@ def interact_with_user(
         if (
             pm_percentage != 0
             and can_send_PM(session_state, pm_percentage)
-            and profile_filter.can_pm_to_private_or_empty
+            and profile_filter.can_pm_to_private_or_empty()
         ):
             sent_pm = _send_pm_or_greeting(
                 device, session_state, my_username, 0, profile_data.is_private,

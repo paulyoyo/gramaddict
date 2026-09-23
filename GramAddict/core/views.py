@@ -843,7 +843,7 @@ class PostsViewList:
                 notification = self.device.find(
                     resourceIdMatches=ResourceID.NOTIFICATION_MESSAGE
                 )
-                if not post_owner_obj.exists and notification.exists():
+                if not post_owner_obj.exists() and notification.exists():
                     logger.warning(
                         "There is a notification there! Please disable them in settings.. We will wait 10 seconds before continue.."
                     )
