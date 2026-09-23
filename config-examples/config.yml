@@ -94,10 +94,12 @@ telegram-reports: false # for using telegram-reports you have also to configure 
 dj-greeting-mode: false # set to true to activate the AI DM greeting/campaign (needs deepseek.yml)
 # Step 2+ — once a day, check greeted users for replies. DeepSeek classifies interest; the bot
 # sends your YouTube link, asks about SoundCloud, then sends the SoundCloud link. Unsure -> Slack.
-# Uncomment reply-dms to enable the daily AI reply job (value-based flag: comment out to disable).
+# Uncomment reply-dms to enable the AI reply job (value-based flag: comment out to disable).
+# It runs first in each session, before new outreach.
 # reply-dms: true
 # reply-dms-min-hours: 3 # wait at least this many hours after the last message before checking
 # reply-dms-limit: 10 # max users to process per session (number or range, e.g. 10-15)
+# reply-dms-cooldown-hours: 20-28 # hours between reply checks; e.g. 2-4 to answer within a few hours
 
 ## Special actions
 # pre-script: pre_script_path_here

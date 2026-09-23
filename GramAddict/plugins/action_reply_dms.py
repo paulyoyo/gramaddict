@@ -23,10 +23,9 @@ from GramAddict.core.views import ProfileView, TabBarView
 
 logger = logging.getLogger(__name__)
 
-# Once-per-day check, but with a randomized window so it drifts instead of
-# firing at a fixed clock hour.
-COOLDOWN_MIN_HOURS = 20
-COOLDOWN_MAX_HOURS = 28
+# Hours between reply checks (--reply-dms-cooldown-hours). A range keeps the
+# check time drifting instead of firing at a fixed clock hour.
+DEFAULT_COOLDOWN_HOURS = "20-28"
 COOLDOWN_FILE = "dm_reply_last_run.txt"
 
 # Questions posed to the DeepSeek classifier at each conversation stage.
@@ -73,6 +72,13 @@ class ActionReplyDMs(Plugin):
                 "help": "max number of users to process per session (number or range)",
                 "metavar": "10",
                 "default": "10",
+            },
+            {
+                "arg": "--reply-dms-cooldown-hours",
+                "nargs": None,
+                "help": "hours between reply checks (number or range); lower it to answer sooner",
+                "metavar": "20-28",
+                "default": DEFAULT_COOLDOWN_HOURS,
             },
             {
                 "arg": "--reply-dms-delay",
@@ -296,8 +302,7 @@ class ActionReplyDMs(Plugin):
             with open(cooldown_file, "r") as f:
                 last_run = datetime.fromisoformat(f.read().strip())
             hours_since = (datetime.now() - last_run).total_seconds() / 3600
-            # Randomized window so the daily check time drifts.
-            required = randint(COOLDOWN_MIN_HOURS, COOLDOWN_MAX_HOURS)
+            required = get_value(self.args.reply_dms_cooldown_hours, None, 24)
             if hours_since >= required:
                 return True
             logger.info(

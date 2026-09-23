@@ -57,6 +57,14 @@ from GramAddict.core.views import AccountView, ProfileView, TabBarView, Universa
 from GramAddict.core.views import load_config as load_views
 
 
+def reply_dms_first(jobs_list):
+    """Answer people who replied before new outreach, while the session's limits
+    are still fresh: active jobs are skipped once a limit is reached."""
+    if "reply-dms" not in jobs_list:
+        return jobs_list
+    return ["reply-dms"] + [job for job in jobs_list if job != "reply-dms"]
+
+
 def start_bot(**kwargs):
     # Logging initialization
     logger = logging.getLogger(__name__)
@@ -351,6 +359,7 @@ def start_bot(**kwargs):
             jobs_list.remove("slack-reports")
             if configs.args.slack_reports:
                 slack_reports_at_end = True
+        jobs_list = reply_dms_first(jobs_list)
         print_limits = True
         unfollow_jobs = [x for x in jobs_list if "unfollow" in x]
         logger.info(
