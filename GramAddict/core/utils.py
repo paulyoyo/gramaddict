@@ -21,6 +21,7 @@ import requests
 import uiautomator2.exceptions
 import urllib3
 from colorama import Fore, Style
+from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
 from GramAddict import __file__, __version__
@@ -168,6 +169,15 @@ def check_adb_connection():
         logger.error(f"Connected devices via adb: {devices_count}. {message}")
 
     return is_ok
+
+
+def is_newer_ig_version(running: str, tested: str) -> bool:
+    """Numeric compare ("99.x" < "300.x"); an unreadable version counts as not newer."""
+    try:
+        return Version(running) > Version(tested)
+    except InvalidVersion:
+        logger.warning(f"Can't compare Instagram version '{running}' with '{tested}'.")
+        return False
 
 
 def get_instagram_version():

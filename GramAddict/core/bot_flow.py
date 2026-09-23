@@ -21,6 +21,7 @@ from GramAddict.core.navigation import LanguageNotEnglishError, check_if_english
 from GramAddict.core.persistent_list import PersistentList
 from GramAddict.core.report import print_full_report
 from GramAddict.core.session_state import SessionState, SessionStateEncoder
+from GramAddict.core.slack import slack_notify
 from GramAddict.core.storage import Storage
 from GramAddict.core.utils import (
     ask_for_a_donation,
@@ -33,6 +34,7 @@ from GramAddict.core.utils import (
     countdown,
     get_instagram_version,
     get_value,
+    is_newer_ig_version,
     head_up_notifications,
     kill_atx_agent,
 )
@@ -166,27 +168,28 @@ def start_bot(**kwargs):
             try:
                 running_ig_version = get_instagram_version()
                 logger.info(f"Instagram version: {running_ig_version}")
-                if tuple(running_ig_version.split(".")) > tuple(
-                    __tested_ig_version__.split(".")
-                ):
-                    logger.warning(
-                        f"You have a newer version of IG then the one tested! (Tested version: {__tested_ig_version__}).",
-                        extra={"color": f"{Style.BRIGHT}"},
-                    )
-                    logger.warning(
-                        "Using an untested version of IG would cause unexpected behavior because some elements in the user interface may have been changed. Any crashes that occur with an untested version are not taken into account."
-                    )
-                    if not configs.args.allow_untested_ig_version:
-                        logger.warning(
-                            "If you press ENTER, you are aware of this and will not ask for support in case of a crash."
-                        )
-                        logger.warning(
-                            "If you want to avoid pressing ENTER next run, add allow-untested-ig-version: true in your config.yml file. (read the docs for more info)"
-                        )
-                        input()
-
+                untested = is_newer_ig_version(running_ig_version, __tested_ig_version__)
             except Exception as e:
                 logger.error(f"Error retrieving the IG version. Exception: {e}")
+                untested = False
+            if untested:
+                logger.warning(
+                    f"You have a newer version of IG then the one tested! (Tested version: {__tested_ig_version__}).",
+                    extra={"color": f"{Style.BRIGHT}"},
+                )
+                if not configs.args.allow_untested_ig_version:
+                    message = (
+                        f"GramAddict stopped: Instagram updated to {running_ig_version} "
+                        f"(tested: {__tested_ig_version__}). The UI may have changed; "
+                        "check the bot before restarting, or set "
+                        "allow-untested-ig-version: true to run anyway."
+                    )
+                    logger.critical(message)
+                    slack_notify(configs.args.username, message)
+                    stop_bot(device, sessions, session_state, was_sleeping=False)
+                logger.warning(
+                    "Using an untested version of IG would cause unexpected behavior because some elements in the user interface may have been changed."
+                )
 
             UniversalActions.close_keyboard(device)
         else:

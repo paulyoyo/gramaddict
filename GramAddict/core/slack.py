@@ -16,6 +16,14 @@ def load_slack_config(username) -> Optional[dict]:
         return None
 
 
+def slack_notify(username, text: str) -> bool:
+    """Send an alert to the account's Slack webhook, if slack.yml is configured."""
+    config = load_slack_config(username) if username else None
+    if not config:
+        return False
+    return slack_send_text(config.get("slack-webhook-url"), text)
+
+
 def slack_send_text(webhook_url: str, text: str) -> bool:
     """Post a message to a Slack Incoming Webhook. Returns True on success."""
     if not webhook_url:
