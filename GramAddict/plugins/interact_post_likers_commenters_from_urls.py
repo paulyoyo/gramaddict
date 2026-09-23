@@ -1,6 +1,5 @@
 import logging
 import os
-from functools import partial
 from os import path
 from random import seed, shuffle
 
@@ -8,15 +7,11 @@ from colorama import Fore, Style
 
 from GramAddict.core.decorators import run_safely
 from GramAddict.core.handle_sources import handle_likers_from_post, handle_commenters
-from GramAddict.core.interaction import (
-    interact_with_user,
-    is_follow_limit_reached_for_source,
-)
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
+from GramAddict.core.source_context import build_source_context, follow_limit_checker
 from GramAddict.core.utils import (
     get_value,
-    init_on_things,
     open_instagram_with_url,
     validate_url,
 )
@@ -135,15 +130,9 @@ class InteractPostLikersCommentersFromURLs(Plugin):
                 f"Processing file: {filename}", extra={"color": f"{Style.BRIGHT}"}
             )
 
-            (
-                on_interaction,
-                stories_percentage,
-                likes_percentage,
-                follow_percentage,
-                comment_percentage,
-                pm_percentage,
-                _,
-            ) = init_on_things(filename, self.args, self.sessions, self.session_state)
+            ctx = build_source_context(
+                self, device, storage, profile_filter, plugin, filename
+            )
 
             @run_safely(
                 device=self.device,
@@ -154,15 +143,7 @@ class InteractPostLikersCommentersFromURLs(Plugin):
                 configs=configs,
             )
             def job():
-                self.process_file(
-                    filename,
-                    on_interaction,
-                    stories_percentage,
-                    likes_percentage,
-                    follow_percentage,
-                    comment_percentage,
-                    pm_percentage,
-                )
+                self.process_file(filename, ctx)
                 self.state.is_job_completed = True
 
             while not self.state.is_job_completed and not limit_reached:
@@ -176,16 +157,7 @@ class InteractPostLikersCommentersFromURLs(Plugin):
                 )
                 limit_reached = active_limits_reached or actions_limit_reached
 
-    def process_file(
-        self,
-        current_file,
-        on_interaction,
-        stories_percentage,
-        likes_percentage,
-        follow_percentage,
-        comment_percentage,
-        pm_percentage,
-    ):
+    def process_file(self, current_file, ctx):
         filename = os.path.join(self.storage.account_path, current_file.split(" ")[0])
         if not path.isfile(filename):
             logger.warning(f"File {current_file} not found.")
@@ -214,61 +186,21 @@ class InteractPostLikersCommentersFromURLs(Plugin):
                 extra={"color": f"{Style.BRIGHT}{Fore.CYAN}"},
             )
 
-            self.process_single_post(
-                url,
-                on_interaction,
-                stories_percentage,
-                likes_percentage,
-                follow_percentage,
-                comment_percentage,
-                pm_percentage,
-            )
+            self.process_single_post(url, ctx)
 
     def _is_valid_instagram_post_url(self, url):
         if not validate_url(url):
             return False
         return "instagram.com/p/" in url or "instagram.com/reel/" in url
 
-    def process_single_post(
-        self,
-        url,
-        on_interaction,
-        stories_percentage,
-        likes_percentage,
-        follow_percentage,
-        comment_percentage,
-        pm_percentage,
-    ):
+    def process_single_post(self, url, ctx):
         if not open_instagram_with_url(url):
             logger.warning(f"Could not open post: {url}")
             return
 
-        interaction = partial(
-            interact_with_user,
-            my_username=self.session_state.my_username,
-            likes_count=self.args.likes_count,
-            likes_percentage=likes_percentage,
-            stories_percentage=stories_percentage,
-            follow_percentage=follow_percentage,
-            comment_percentage=comment_percentage,
-            pm_percentage=pm_percentage,
-            profile_filter=self.profile_filter,
-            args=self.args,
-            session_state=self.session_state,
-            scraping_file=self.args.scrape_to_file,
-            current_mode=self.current_mode,
-        )
-
-        source_follow_limit = (
-            get_value(self.args.follow_limit, None, 15)
-            if self.args.follow_limit is not None
-            else None
-        )
-        is_follow_limit_reached = partial(
-            is_follow_limit_reached_for_source,
-            session_state=self.session_state,
-            follow_limit=source_follow_limit,
-            source=url,
+        # follows are counted per post URL, not per file
+        is_follow_limit_reached = follow_limit_checker(
+            self.args, self.session_state, url
         )
 
         skipped_list_limit = get_value(self.args.skipped_list_limit, None, 15)
@@ -277,8 +209,8 @@ class InteractPostLikersCommentersFromURLs(Plugin):
         if self.args.interact_likers:
             self._interact_with_likers(
                 url,
-                on_interaction,
-                interaction,
+                ctx.on_interaction,
+                ctx.interaction,
                 is_follow_limit_reached,
                 skipped_list_limit,
                 skipped_fling_limit,
@@ -290,8 +222,8 @@ class InteractPostLikersCommentersFromURLs(Plugin):
             else:
                 self._interact_with_commenters(
                     url,
-                    on_interaction,
-                    interaction,
+                    ctx.on_interaction,
+                    ctx.interaction,
                     is_follow_limit_reached,
                     skipped_list_limit,
                     skipped_fling_limit,

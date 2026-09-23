@@ -1,5 +1,4 @@
 import logging
-from functools import partial
 from random import seed
 
 import emoji
@@ -7,12 +6,9 @@ from colorama.ansi import Fore
 
 from GramAddict.core.decorators import run_safely
 from GramAddict.core.handle_sources import handle_posts
-from GramAddict.core.interaction import (
-    interact_with_user,
-    is_follow_limit_reached_for_source,
-)
 from GramAddict.core.plugin_loader import Plugin
-from GramAddict.core.utils import get_value, init_on_things, sample_sources
+from GramAddict.core.source_context import build_source_context
+from GramAddict.core.utils import sample_sources
 
 logger = logging.getLogger(__name__)
 
@@ -87,16 +83,9 @@ class InteractHashtagPosts(Plugin):
                 extra={"color": f"{Fore.BLUE}"},
             )
 
-            # Init common things
-            (
-                on_interaction,
-                stories_percentage,
-                likes_percentage,
-                follow_percentage,
-                comment_percentage,
-                pm_percentage,
-                interact_percentage,
-            ) = init_on_things(source, self.args, self.sessions, self.session_state)
+            ctx = build_source_context(
+                self, device, storage, profile_filter, plugin, source
+            )
 
             @run_safely(
                 device=device,
@@ -107,20 +96,7 @@ class InteractHashtagPosts(Plugin):
                 configs=configs,
             )
             def job():
-                self.handle_hashtag(
-                    device,
-                    source,
-                    plugin,
-                    storage,
-                    profile_filter,
-                    on_interaction,
-                    stories_percentage,
-                    likes_percentage,
-                    follow_percentage,
-                    comment_percentage,
-                    pm_percentage,
-                    interact_percentage,
-                )
+                self.handle_hashtag(ctx)
                 self.state.is_job_completed = True
 
             while not self.state.is_job_completed and not limit_reached:
@@ -133,60 +109,18 @@ class InteractHashtagPosts(Plugin):
                 )
                 break
 
-    def handle_hashtag(
-        self,
-        device,
-        hashtag,
-        current_job,
-        storage,
-        profile_filter,
-        on_interaction,
-        stories_percentage,
-        likes_percentage,
-        follow_percentage,
-        comment_percentage,
-        pm_percentage,
-        interact_percentage,
-    ):
-        interaction = partial(
-            interact_with_user,
-            my_username=self.session_state.my_username,
-            likes_count=self.args.likes_count,
-            likes_percentage=likes_percentage,
-            stories_percentage=stories_percentage,
-            follow_percentage=follow_percentage,
-            comment_percentage=comment_percentage,
-            pm_percentage=pm_percentage,
-            profile_filter=profile_filter,
-            args=self.args,
-            session_state=self.session_state,
-            scraping_file=self.args.scrape_to_file,
-            current_mode=self.current_mode,
-        )
-
-        source_follow_limit = (
-            get_value(self.args.follow_limit, None, 15)
-            if self.args.follow_limit is not None
-            else None
-        )
-        is_follow_limit_reached = partial(
-            is_follow_limit_reached_for_source,
-            session_state=self.session_state,
-            follow_limit=source_follow_limit,
-            source=hashtag,
-        )
-
+    def handle_hashtag(self, ctx):
         handle_posts(
             self,
-            device,
-            self.session_state,
-            hashtag,
-            current_job,
-            storage,
-            profile_filter,
-            on_interaction,
-            interaction,
-            is_follow_limit_reached,
-            interact_percentage,
+            ctx.device,
+            ctx.session_state,
+            ctx.source,
+            ctx.current_job,
+            ctx.storage,
+            ctx.profile_filter,
+            ctx.on_interaction,
+            ctx.interaction,
+            ctx.is_follow_limit_reached,
+            ctx.percentages.interact,
             self.args.scrape_to_file,
         )
