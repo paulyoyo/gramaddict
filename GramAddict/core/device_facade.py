@@ -6,13 +6,13 @@ from inspect import stack
 from os import getcwd, listdir
 from random import randint, uniform
 from re import search
-from subprocess import PIPE, run
 from time import sleep
 from typing import Optional
 import time  # Add explicit time import for error handling
 
 import uiautomator2
 
+from GramAddict.core.adb import adb, device_quote
 from GramAddict.core.utils import random_sleep
 
 logger = logging.getLogger(__name__)
@@ -237,13 +237,7 @@ class DeviceFacade:
         sleep(2)
 
     def is_screen_locked(self):
-        data = run(
-            f"adb -s {self.deviceV2.serial} shell dumpsys window",
-            encoding="utf-8",
-            stdout=PIPE,
-            stderr=PIPE,
-            shell=True,
-        )
+        data = adb(self.deviceV2.serial, "shell", "dumpsys", "window")
         if data != "":
             flag = search("mDreamingLockscreen=(true|false)", data.stdout)
             return flag is not None and flag.group(1) == "true"
@@ -254,13 +248,7 @@ class DeviceFacade:
             return None
 
     def _is_keyboard_show(self):
-        data = run(
-            f"adb -s {self.deviceV2.serial} shell dumpsys input_method",
-            encoding="utf-8",
-            stdout=PIPE,
-            stderr=PIPE,
-            shell=True,
-        )
+        data = adb(self.deviceV2.serial, "shell", "dumpsys", "input_method")
         if data != "":
             flag = search("mInputShown=(true|false)", data.stdout)
             return flag.group(1) == "true"
@@ -341,13 +329,18 @@ class DeviceFacade:
                 
                 # Type the password/PIN
                 logger.info("Attempting to unlock device with configured password...")
-                cmd = f"adb{'' if self.device_id is None else f' -s {self.device_id}'} shell input text {configs.args.device_password}"
-                run(cmd, shell=True, check=True)
+                adb(
+                    self.device_id,
+                    "shell",
+                    "input",
+                    "text",
+                    device_quote(configs.args.device_password),
+                    check=True,
+                )
                 sleep(1)
-                
+
                 # Press enter to confirm
-                cmd = f"adb{'' if self.device_id is None else f' -s {self.device_id}'} shell input keyevent 66"
-                run(cmd, shell=True, check=True)
+                adb(self.device_id, "shell", "input", "keyevent", "66", check=True)
                 sleep(2)
                 
                 if not self.is_screen_locked():

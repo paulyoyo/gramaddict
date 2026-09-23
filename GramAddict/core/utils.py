@@ -12,7 +12,6 @@ from math import nan
 from os import getcwd, rename, walk
 from pathlib import Path
 from random import randint, shuffle, uniform
-from subprocess import PIPE
 from time import sleep
 from typing import Optional, Tuple, Union
 from urllib.parse import urlparse
@@ -25,6 +24,7 @@ from colorama import Fore, Style
 from packaging.version import parse as parse_version
 
 from GramAddict import __file__, __version__
+from GramAddict.core.adb import AdbError, adb, device_quote
 from GramAddict.core.config import Config
 from GramAddict.core.log import get_log_file_config
 from GramAddict.core.report import print_full_report
@@ -149,12 +149,9 @@ def config_examples():
 def check_adb_connection():
     is_device_id_provided = configs.device_id is not None
     # sometimes it needs two requests to wake up...
-    stream = os.popen("adb devices")
-    stream.close()
-    stream = os.popen("adb devices")
-    output = stream.read()
+    adb(None, "devices")
+    output = adb(None, "devices").stdout
     devices_count = len(re.findall("device\n", output))
-    stream.close()
 
     is_ok = True
     message = "That's ok."
@@ -174,20 +171,24 @@ def check_adb_connection():
 
 
 def get_instagram_version():
-    stream = os.popen(
-        f"adb{'' if configs.device_id is None else ' -s ' + configs.device_id} shell dumpsys package {app_id}"
-    )
-    output = stream.read()
+    output = adb(configs.device_id, "shell", "dumpsys", "package", app_id).stdout
     version_match = re.findall("versionName=(\\S+)", output)
     version = version_match[0] if len(version_match) == 1 else "not found"
-    stream.close()
     return version
 
 
 def open_instagram_with_url(url) -> bool:
     logger.info(f"Open Instagram app with url: {url}")
-    cmd = f"adb{'' if configs.device_id is None else ' -s ' + configs.device_id} shell am start -a android.intent.action.VIEW -d {url}"
-    cmd_res = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
+    cmd_res = adb(
+        configs.device_id,
+        "shell",
+        "am",
+        "start",
+        "-a",
+        "android.intent.action.VIEW",
+        "-d",
+        device_quote(url),
+    )
     err = cmd_res.stderr.strip()
     random_sleep()
     if err:
@@ -204,28 +205,36 @@ def head_up_notifications(enabled: bool = False):
     """
     Enable or disable head-up-notifications
     """
-    cmd: str = (
-        f"adb{'' if configs.device_id is None else ' -s ' + configs.device_id} shell settings put global heads_up_notifications_enabled {0 if not enabled else 1}"
+    return adb(
+        configs.device_id,
+        "shell",
+        "settings",
+        "put",
+        "global",
+        "heads_up_notifications_enabled",
+        1 if enabled else 0,
     )
-    return subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
 
 
 def check_screen_timeout():
     MIN_TIMEOUT = 5 * 6_000
-    cmd: str = (
-        f"adb{'' if configs.device_id is None else f' -s {configs.device_id}'} shell settings get system screen_off_timeout"
+    resp = adb(
+        configs.device_id, "shell", "settings", "get", "system", "screen_off_timeout"
     )
-    resp = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
     try:
         if int(resp.stdout.lstrip()) < MIN_TIMEOUT:
             logger.info(
                 f"Setting timeout of the screen to {MIN_TIMEOUT/6_000:.0f} minutes."
             )
-            cmd: str = (
-                f"adb{'' if configs.device_id is None else f' -s {configs.device_id}'} shell settings put system screen_off_timeout {MIN_TIMEOUT}"
+            adb(
+                configs.device_id,
+                "shell",
+                "settings",
+                "put",
+                "system",
+                "screen_off_timeout",
+                MIN_TIMEOUT,
             )
-
-            subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
         else:
             logger.info("Screen timeout is fine!")
     except ValueError:
@@ -276,20 +285,14 @@ def open_instagram(device):
         random_sleep()
     logger.debug("Setting FastInputIME as default keyboard.")
     device.deviceV2.set_fastinput_ime(True)
-    cmd: str = (
-        f"adb{'' if configs.device_id is None else ' -s ' + configs.device_id} shell settings get secure default_input_method"
+    cmd_res = adb(
+        configs.device_id, "shell", "settings", "get", "secure", "default_input_method"
     )
-    cmd_res = subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
     if cmd_res.stdout.replace(nl, "") != FastInputIME:
         logger.warning(
             f"FastInputIME is not the default keyboard! Default is: {cmd_res.stdout.replace(nl, '')}. Changing it via adb.."
         )
-        cmd: str = (
-            f"adb{'' if configs.device_id is None else ' -s ' + configs.device_id} shell ime set {FastInputIME}"
-        )
-        cmd_res = subprocess.run(
-            cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8"
-        )
+        cmd_res = adb(configs.device_id, "shell", "ime", "set", FastInputIME)
         if cmd_res.stdout.startswith("Error:"):
             logger.warning(
                 f"{cmd_res.stdout.replace(nl, '')}. It looks like you don't have FastInputIME installed :S"
@@ -437,22 +440,20 @@ def print_slack_reports(
 def kill_atx_agent(device):
     _restore_keyboard(device)
     logger.info("Kill atx agent.")
-    cmd: str = (
-        f"adb{'' if configs.device_id is None else f' -s {configs.device_id}'} shell pkill atx-agent"
-    )
-    subprocess.run(cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8")
+    adb(configs.device_id, "shell", "pkill", "atx-agent")
 
 
 def restart_atx_agent(device):
     kill_atx_agent(device)
     logger.info("Restarting atx agent.")
-    cmd: str = (
-        f"adb{'' if configs.device_id is None else f' -s {configs.device_id}'} shell /data/local/tmp/atx-agent server -d"
-    )
-
     try:
-        result = subprocess.run(
-            cmd, stdout=PIPE, stderr=PIPE, shell=True, encoding="utf8", check=True
+        result = adb(
+            configs.device_id,
+            "shell",
+            "/data/local/tmp/atx-agent",
+            "server",
+            "-d",
+            check=True,
         )
         if result.returncode != 0:
             logger.error(f"Failed to restart atx-agent: {result.stderr}")
@@ -461,7 +462,7 @@ def restart_atx_agent(device):
             # Wait for uiautomator2 to be fully ready
             logger.info("Waiting for uiautomator2 to initialize...")
             _warmup_uiautomator(device)
-    except subprocess.CalledProcessError as e:
+    except AdbError as e:
         logger.error(f"Error occurred while restarting atx-agent: {e}")
 
 
