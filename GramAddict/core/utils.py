@@ -276,6 +276,7 @@ def open_instagram(device):
         choose_cloned_app(device)
         random_sleep(3, 3, modulable=False)
 
+    wait_for_instagram_ui(device)
     logger.info("Ready for botting!🤫", extra={"color": f"{Style.BRIGHT}{Fore.GREEN}"})
 
     random_sleep()
@@ -464,6 +465,44 @@ def restart_atx_agent(device):
             _warmup_uiautomator(device)
     except AdbError as e:
         logger.error(f"Error occurred while restarting atx-agent: {e}")
+
+
+def wait_until_uiautomator_is_fast(device, budget=240, fast=3.0) -> bool:
+    """On a cold start every uiautomator call can take ~20s for minutes, so
+    selectors time out and taps land before the UI is drawn. Poll a cheap call
+    until it answers quickly."""
+    started = time.monotonic()
+    while True:
+        t0 = time.monotonic()
+        try:
+            device.deviceV2.info
+        except Exception as e:
+            logger.debug(f"uiautomator2 not ready yet: {e}")
+        took = time.monotonic() - t0
+        if took < fast:
+            waited = time.monotonic() - started
+            if waited > fast:
+                logger.info(f"uiautomator2 responsive after {waited:.0f}s.")
+            return True
+        if time.monotonic() - started > budget:
+            logger.warning(
+                f"uiautomator2 still slow ({took:.0f}s per call) after {budget}s, continuing anyway."
+            )
+            return False
+        logger.debug(f"uiautomator2 slow ({took:.1f}s per call), waiting...")
+        sleep(2)
+
+
+def wait_for_instagram_ui(device, attempts=5) -> bool:
+    """Wait until Instagram has drawn its tab bar before navigating."""
+    from GramAddict.core.device_facade import Timeout  # device_facade imports utils
+
+    tab_bar = device.find(resourceIdMatches=ResourceID.TAB_BAR)
+    for _ in range(attempts):
+        if tab_bar.exists(Timeout.LONG):
+            return True
+    logger.warning("Instagram tab bar not visible yet, continuing anyway.")
+    return False
 
 
 def _warmup_uiautomator(device, max_retries=5):

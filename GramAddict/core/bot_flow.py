@@ -49,6 +49,7 @@ from GramAddict.core.utils import (
     show_ending_conditions,
     stop_bot,
     wait_for_next_session,
+    wait_until_uiautomator_is_fast,
 )
 from GramAddict.core.views import AccountView, ProfileView, TabBarView, UniversalActions
 from GramAddict.core.views import load_config as load_views
@@ -127,6 +128,7 @@ def start_bot(**kwargs):
         pre_post_script(path=configs.args.pre_script)
         if configs.args.restart_atx_agent:
             restart_atx_agent(device)
+        wait_until_uiautomator_is_fast(device)
         get_device_info(device)
         session_state = SessionState(configs)
         session_state.set_limits_session()
