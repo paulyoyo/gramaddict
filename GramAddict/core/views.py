@@ -1073,43 +1073,9 @@ class PostsViewList:
         return pt.image_to_string(screenshot_cropped).split(" ")[0].rstrip()
 
 
-class LanguageView:
-    def __init__(self, device: DeviceFacade):
-        self.device = device
-
-    def setLanguage(self, language: str):
-        logger.debug(f"Set language to {language}.")
-        search_edit_text = self.device.find(
-            resourceId=ResourceID.SEARCH,
-            className=ClassName.EDIT_TEXT,
-        )
-        search_edit_text.set_text(language, Mode.PASTE if args.dont_type else Mode.TYPE)
-
-        list_view = self.device.find(
-            resourceId=ResourceID.LANGUAGE_LIST_LOCALE,
-            className=ClassName.LIST_VIEW,
-        )
-        first_item = list_view.child(index=0)
-        first_item.click()
-        random_sleep()
-
-
 class AccountView:
     def __init__(self, device: DeviceFacade):
         self.device = device
-
-    def navigateToLanguage(self):
-        logger.debug("Navigate to Language")
-        button = self.device.find(
-            className=ClassName.BUTTON,
-            index=6,
-        )
-        if button.exists():
-            button.click()
-            return LanguageView(self.device)
-        else:
-            logger.error("Not able to set your app in English! Do it by yourself!")
-            exit(0)
 
     def navigate_to_main_account(self):
         logger.debug("Navigating to main account...")
@@ -1232,41 +1198,6 @@ class AccountView:
             if scrollable.exists():
                 scrollable.scroll(Direction.UP)
                 random_sleep(1, 2, modulable=False)
-
-
-class SettingsView:
-    def __init__(self, device: DeviceFacade):
-        self.device = device
-
-    def navigateToAccount(self):
-        logger.debug("Navigate to Account")
-        button = self.device.find(
-            className=ClassName.BUTTON,
-            index=5,
-        )
-        if button.exists():
-            button.click()
-            return AccountView(self.device)
-        else:
-            logger.error("Not able to set your app in English! Do it by yourself!")
-            exit(2)
-
-
-class OptionsView:
-    def __init__(self, device: DeviceFacade):
-        self.device = device
-
-    def navigateToSettings(self):
-        logger.debug("Navigate to Settings")
-        button = self.device.find(
-            resourceId=ResourceID.MENU_OPTION_TEXT,
-        )
-        if button.exists():
-            button.click()
-            return SettingsView(self.device)
-        else:
-            logger.error("Not able to set your app in English! Do it by yourself!")
-            exit(0)
 
 
 class OpenedPostView:
@@ -1645,13 +1576,6 @@ class ProfileView(ActionBarView):
         super().__init__(device)
         self.device = device
         self.is_own_profile = is_own_profile
-
-    def navigateToOptions(self):
-        logger.debug("Navigate to Options")
-        button = self.action_bar.child(index=2)
-        button.click()
-
-        return OptionsView(self.device)
 
     def _getActionBarTitleBtn(self, watching_stories=False):
         bar = case_insensitive_re(

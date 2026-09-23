@@ -17,7 +17,7 @@ from GramAddict.core.log import (
     is_log_file_updated,
     update_log_file_name,
 )
-from GramAddict.core.navigation import check_if_english
+from GramAddict.core.navigation import LanguageNotEnglishError, check_if_english
 from GramAddict.core.persistent_list import PersistentList
 from GramAddict.core.report import print_full_report
 from GramAddict.core.session_state import SessionState, SessionStateEncoder
@@ -243,6 +243,8 @@ def start_bot(**kwargs):
             # Override username from config if specified (profile tab may show wrong user on v300+)
             if configs.args.username is not None:
                 session_state.my_username = configs.args.username
+        except LanguageNotEnglishError:
+            stop_bot(device, sessions, session_state)
         except Exception as e:
             logger.error(f"Exception: {e}")
             save_crash(device)

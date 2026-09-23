@@ -1,5 +1,4 @@
 import logging
-import sys
 
 from colorama import Fore
 
@@ -16,6 +15,10 @@ from GramAddict.core.views import (
 logger = logging.getLogger(__name__)
 
 
+class LanguageNotEnglishError(Exception):
+    pass
+
+
 def check_if_english(device):
     """check if app is in English"""
     logger.debug("Checking if app is in English..")
@@ -28,7 +31,7 @@ def check_if_english(device):
         logger.debug("Instagram in English.")
     else:
         logger.error("Please change the language manually to English!")
-        sys.exit(1)
+        raise LanguageNotEnglishError(f"{post}/{follower}/{following}")
     return ProfileView(device, is_own_profile=True)
 
 
