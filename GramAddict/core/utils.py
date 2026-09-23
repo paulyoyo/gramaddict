@@ -738,7 +738,11 @@ def init_on_things(source, args, sessions, session_state):
     )
 
 
-def set_time_delta(args):
+def set_time_delta(args, first_session=False):
+    if first_session:
+        args.time_delta_session = 0
+        logger.info("Time delta skipped for first session (starting now).")
+        return
     args.time_delta_session = (
         get_value(args.time_delta, None, 0) * (1 if random.random() < 0.5 else -1) * 60
     ) + random.randint(0, 59)

@@ -117,7 +117,8 @@ def start_bot(**kwargs):
     following_now = None
 
     while True:
-        set_time_delta(configs.args)
+        # ponytail: first session starts instantly; time_delta only shifts later sessions
+        set_time_delta(configs.args, first_session=not sessions)
         inside_working_hours, time_left = SessionState.inside_working_hours(
             configs.args.working_hours, configs.args.time_delta_session
         )
