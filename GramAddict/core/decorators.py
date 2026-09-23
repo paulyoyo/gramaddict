@@ -97,7 +97,7 @@ def run_safely(device, device_id, sessions, session_state, screen_record, config
                 close_instagram(device)
                 print_full_report(sessions, configs.args.scrape_to_file)
                 sessions.persist(directory=session_state.my_username)
-                raise e from e
+                raise
 
         return wrapper
 

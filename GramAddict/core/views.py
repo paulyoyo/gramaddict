@@ -1,4 +1,3 @@
-import datetime
 import logging
 import re
 import platform
@@ -511,9 +510,7 @@ class PostsViewList:
             zoomable_view_container = self.device.find(
                 resourceIdMatches=containers_content
             ).get_bounds()["bottom"]
-            ac_exists, _, ac_bottom = PostsViewList(
-                self.device
-            )._get_action_bar_position()
+            ac_exists, _, ac_bottom = self._get_action_bar_position()
             if ac_exists and zoomable_view_container < ac_bottom:
                 zoomable_view_container += ac_bottom
             self.device.swipe_points(
@@ -531,7 +528,7 @@ class PostsViewList:
             for _ in range(3):
                 if not gap_view_obj.exists():
                     logger.debug("Can't find the gap obj, scroll down a little more.")
-                    PostsViewList(self.device).swipe_to_fit_posts(SwipeTo.HALF_PHOTO)
+                    self.swipe_to_fit_posts(SwipeTo.HALF_PHOTO)
                     gap_view_obj = self.device.find(resourceIdMatches=containers_gap)
                     if not gap_view_obj.exists():
                         continue
@@ -543,14 +540,14 @@ class PostsViewList:
                         gap_view_obj.get_bounds()["bottom"]
                         < media.get_bounds()["bottom"]
                     ):
-                        PostsViewList(self.device).swipe_to_fit_posts(
+                        self.swipe_to_fit_posts(
                             SwipeTo.HALF_PHOTO
                         )
                         continue
                     suggested = self.device.find(resourceIdMatches=suggested_users)
                     if suggested.exists():
                         for _ in range(2):
-                            PostsViewList(self.device).swipe_to_fit_posts(
+                            self.swipe_to_fit_posts(
                                 SwipeTo.HALF_PHOTO
                             )
                             footer_obj = self.device.find(
@@ -735,7 +732,7 @@ class PostsViewList:
     ) -> Tuple[bool, str, str, bool, bool, bool]:
         """check if that post has been just interacted"""
         universal_actions = UniversalActions(self.device)
-        username, is_ad, is_hashtag = PostsViewList(self.device)._post_owner(
+        username, is_ad, is_hashtag = self._post_owner(
             current_job, Owner.GET_NAME
         )
         has_tags = self._has_tags()
@@ -794,9 +791,7 @@ class PostsViewList:
 
     def _if_action_bar_is_over_obj_swipe(self, obj):
         """do a swipe of the amount of the action bar"""
-        action_bar_exists, _, action_bar_bottom = PostsViewList(
-            self.device
-        )._get_action_bar_position()
+        action_bar_exists, _, action_bar_bottom = self._get_action_bar_position()
         if action_bar_exists:
             obj_top = obj.get_bounds()["top"]
             if action_bar_bottom > obj_top:
@@ -883,14 +878,12 @@ class PostsViewList:
             return False, is_ad, is_hashtag
         if mode == Owner.OPEN:
             logger.info("Open post owner.")
-            PostsViewList(self.device)._if_action_bar_is_over_obj_swipe(post_owner_obj)
+            self._if_action_bar_is_over_obj_swipe(post_owner_obj)
             post_owner_obj.click()
             return True, is_ad, is_hashtag
         elif mode == Owner.GET_NAME:
             if current_job == "feed":
-                is_ad, is_hashtag, username = PostsViewList(
-                    self.device
-                )._check_if_ad_or_hashtag(post_owner_obj)
+                is_ad, is_hashtag, username = self._check_if_ad_or_hashtag(post_owner_obj)
             if username is None:
                 username = (
                     post_owner_obj.get_text().replace("•", "").strip().split(" ", 1)[0]
@@ -965,7 +958,6 @@ class PostsViewList:
         skip_media_check: bool = False,
         already_watched: bool = False,
     ):
-        post_view_list = PostsViewList(self.device)
         opened_post_view = OpenedPostView(self.device)
         if skip_media_check:
             return
@@ -973,14 +965,12 @@ class PostsViewList:
         if content_desc is None:
             return
         if not already_watched:
-            media_type, _ = post_view_list.detect_media_type(content_desc)
+            media_type, _ = self.detect_media_type(content_desc)
             opened_post_view.watch_media(media_type)
         if mode == LikeMode.DOUBLE_CLICK:
             if media_type in (MediaType.CAROUSEL, MediaType.PHOTO):
                 logger.info("Double click on post.")
-                _, _, action_bar_bottom = PostsViewList(
-                    self.device
-                )._get_action_bar_position()
+                _, _, action_bar_bottom = self._get_action_bar_position()
                 media.double_click(obj_over=action_bar_bottom)
             else:
                 self._like_in_post_view(
@@ -1019,7 +1009,7 @@ class PostsViewList:
             UniversalActions(self.device)._swipe_points(
                 direction=Direction.DOWN, delta_y=100
             )
-            return PostsViewList(self.device)._check_if_liked()
+            return self._check_if_liked()
 
     def _check_if_ad_or_hashtag(
         self, post_owner_obj
@@ -2270,31 +2260,6 @@ class CurrentStoryView:
             else reel_viewer_title.get_text(error=False).replace(" ", "")
         )
 
-    def getTimestamp(self) -> Optional[datetime.datetime]:
-        reel_viewer_timestamp = self.device.find(
-            resourceId=ResourceID.REEL_VIEWER_TIMESTAMP,
-        )
-        if reel_viewer_timestamp.exists():
-            timestamp = reel_viewer_timestamp.get_text().strip()
-            value = int(re.sub("[^0-9]", "", timestamp))
-            if timestamp[-1] == "s":
-                return datetime.timestamp(
-                    datetime.datetime.now() - datetime.timedelta(seconds=value)
-                )
-            elif timestamp[-1] == "m":
-                return datetime.timestamp(
-                    datetime.datetime.now() - datetime.timedelta(minutes=value)
-                )
-            elif timestamp[-1] == "h":
-                return datetime.timestamp(
-                    datetime.datetime.now() - datetime.timedelta(hours=value)
-                )
-            else:
-                return datetime.timestamp(
-                    datetime.datetime.now() - datetime.timedelta(days=value)
-                )
-        return None
-
 
 class UniversalActions:
     def __init__(self, device: DeviceFacade):
@@ -2416,7 +2381,7 @@ class UniversalActions:
 
     @staticmethod
     def close_keyboard(device):
-        flag = DeviceFacade(device.device_id, device.app_id)._is_keyboard_show()
+        flag = device._is_keyboard_show()
         if flag:
             logger.debug("The keyboard is currently open. Press back to close.")
             device.back()

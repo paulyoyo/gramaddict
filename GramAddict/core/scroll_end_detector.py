@@ -6,16 +6,14 @@ logger = logging.getLogger(__name__)
 
 
 class ScrollEndDetector:
-    # Specify how many times we'll have to iterate over same users to decide that it's the end of the list
-    repeats_to_end = 0
-    skipped_all = 0
-    skipped_all_fling = 0
-    pages = []
-
     def __init__(
         self, repeats_to_end=5, skipped_list_limit=999, skipped_fling_limit=999
     ):
+        # how many times we'll have to iterate over same users to decide that it's the end of the list
         self.repeats_to_end = repeats_to_end
+        self.skipped_all = 0
+        self.skipped_all_fling = 0
+        self.pages = []
         self.skipped_list_limit = skipped_list_limit
         self.skipped_fling_limit = skipped_fling_limit
 

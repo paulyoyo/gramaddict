@@ -361,13 +361,6 @@ class DeviceFacade:
         except uiautomator2.JSONRPCError as e:
             raise DeviceFacade.JsonRpcError(e)
 
-    def window_size(self):
-        """return (width, height)"""
-        try:
-            self.deviceV2.window_size()
-        except uiautomator2.JSONRPCError as e:
-            raise DeviceFacade.JsonRpcError(e)
-
     def swipe(self, direction: Direction, scale=0.5):
         """Swipe finger in the `direction`.
         Scale is the sliding distance. Default to 50% of the screen width
