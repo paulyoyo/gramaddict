@@ -36,8 +36,7 @@ class PersistentList(list):
                     logger.error(
                         f"Please check {json_file.name}, it contains this error: {e}"
                     )
-                    sys.exit(0)
-            os.remove(path)
+                    sys.exit(1)
         else:
             json_array = []
 
