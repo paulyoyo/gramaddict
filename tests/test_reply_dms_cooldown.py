@@ -52,3 +52,32 @@ def test_reply_dms_runs_before_outreach_jobs():
     jobs = ["blogger-followers", "reply-dms", "blogger-post-likers"]
     assert reply_dms_first(jobs) == ["reply-dms", "blogger-followers", "blogger-post-likers"]
     assert reply_dms_first(["blogger-followers"]) == ["blogger-followers"]
+
+
+# Bounds from a real IG v300 thread dump (720px wide): our greeting, then "Si bro".
+GREETING = ("Holi Stick! Vi que sigues a @miabotanicclub.pe", 704)
+SI_BRO = ("Si bro", 242)
+
+
+def test_reply_after_our_greeting_is_read():
+    from GramAddict.plugins.action_reply_dms import text_after_our_last_message
+
+    assert text_after_our_last_message([GREETING, SI_BRO], 720) == "Si bro"
+
+
+def test_our_own_last_message_is_not_a_reply():
+    from GramAddict.plugins.action_reply_dms import text_after_our_last_message
+
+    assert text_after_our_last_message([GREETING], 720) is None
+    assert text_after_our_last_message([SI_BRO, GREETING], 720) is None
+    assert text_after_our_last_message([], 720) is None
+
+
+def test_several_incoming_bubbles_are_joined_and_long_ones_stay_incoming():
+    from GramAddict.plugins.action_reply_dms import text_after_our_last_message
+
+    long_incoming = ("Hola! si claro pasame el link porfa", 609)
+    assert (
+        text_after_our_last_message([GREETING, SI_BRO, long_incoming], 720)
+        == "Si bro / Hola! si claro pasame el link porfa"
+    )

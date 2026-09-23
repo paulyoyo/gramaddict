@@ -28,6 +28,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_COOLDOWN_HOURS = "20-28"
 COOLDOWN_FILE = "dm_reply_last_run.txt"
 
+# Outgoing DM bubbles end ~2% from the right screen edge; incoming ones start
+# after the sender's avatar and end >=15% away (IG v300 dump, 720px wide).
+OUTGOING_RIGHT_GAP = 0.06
+
+
+def text_after_our_last_message(bubbles, screen_width):
+    """bubbles: [(text, right_edge_px)] top to bottom. Returns the incoming
+    texts after our last outgoing bubble, joined, or None if there are none."""
+    incoming = []
+    for text, right in bubbles:
+        if screen_width - right < screen_width * OUTGOING_RIGHT_GAP:
+            incoming = []  # ours: anything before it was already answered
+        else:
+            incoming.append(text)
+    return " / ".join(incoming) or None
+
 # Questions posed to the DeepSeek classifier at each conversation stage.
 Q_INTERESTED = "Does this reply show the person is interested in listening to the mix?"
 Q_SOUNDCLOUD = "Does this reply say they use SoundCloud (or want the SoundCloud link)?"
@@ -233,23 +249,18 @@ class ActionReplyDMs(Plugin):
         return template.replace("{link}", link)
 
     def _read_last_reply(self, device):
-        """Return the text of the user's latest reply bubble, or None.
-
-        ponytail: reads the last DM bubble as the reply. Distinguishing incoming
-        vs outgoing bubbles reliably needs an on-device `gramaddict dump` (direction
-        lives in the parent container / horizontal bounds) — refine _read_last_reply
-        once that's inspected. Until then, the min-hours + once-daily gate keeps
-        misfires low.
-        """
+        """Return what the user wrote after our last message, or None if the
+        last message in the thread is ours (they haven't replied yet)."""
         bubbles = device.find(resourceId=self.ResourceID.DIRECT_TEXT_MESSAGE_TEXT_VIEW)
         if not bubbles.exists(Timeout.SHORT):
             return None
-        last_text = None
+        width = device.get_info()["displayWidth"]
+        visible = []
         for bubble in bubbles:
             text = bubble.get_text(error=False)
             if text:
-                last_text = text
-        return last_text
+                visible.append((text, bubble.get_bounds()["right"]))
+        return text_after_our_last_message(visible, width)
 
     def _human_reply_pause(self, target):
         # Replying in <1s is the one evidence-backed bot tell (velocity detection).
