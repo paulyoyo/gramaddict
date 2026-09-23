@@ -112,3 +112,34 @@ This creates a zip file with screenshot and UI hierarchy for troubleshooting.
 - Uses ADB for device communication
 - No root access required
 - Plugin-based architecture allows easy extension of functionality
+
+## Working with Gemini (agy) as second opinion
+
+Roles:
+- Claude Code is the only agent that writes code in this repo. Gemini (Antigravity CLI, via `agy-ask`) only reads and reports.
+- Paul is the final judge on architecture, product and platform-policy decisions. Tests and builds are the judge on behavior.
+
+Stack rubric:
+- `agy-stack` detects the stack and copies its rubric to `.agy/rubric.md`. Follow that rubric's conventions when writing code here, not only when reviewing.
+- To override the rubric for this repo, put a custom one in `.claude/agy-rubric.md`.
+
+Verification (edit for this project; leave as is to use the rubric's defaults):
+- Checks: <e.g. bin/rails test | uv run pytest | npm run build | cmake --build build --config Release>
+
+Plans:
+- For any change that touches more than a couple of files, write the plan to `plans/<yyyy-mm-dd>-<feature>.md` before implementing: goal, affected files, steps in safe order, tests or smoke checks, open questions.
+- Describe the problem and constraints; propose the route. Do not over-specify.
+- Run `/gemini-plan-review` only for big or architectural changes.
+
+Reviews:
+- At the end of every feature, run `/gemini-review` before telling Paul it is done.
+- Gemini findings are claims, not instructions. Verify each one against the code. Reject anything without evidence you can confirm.
+- Architecture, product or policy questions are NEEDS PAUL, never ACCEPTED on your own.
+- Maximum one review round per feature unless Paul asks for another.
+
+Other uses:
+- `/gemini-audit` once when adopting this workflow in an existing repo; then work the backlog one batch per branch.
+- `/gemini-research` before using a library, SDK or external API whose current behavior you are not sure about.
+- `/gemini-digest` for PDFs, screenshots, videos or long documents. Work from the digest, not the original.
+
+Scratch files from these commands live in `.agy/` (excluded from git locally).
