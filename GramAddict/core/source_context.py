@@ -12,6 +12,7 @@ from GramAddict.core.interaction import (
     is_follow_limit_reached_for_source,
 )
 from GramAddict.core.resources import ResourceID as resources
+from GramAddict.core.storage import InteractionStore
 from GramAddict.core.utils import get_value, init_on_things
 
 
@@ -31,7 +32,7 @@ class SourceContext:
     args: Any
     session_state: Any
     resource_id: Any
-    storage: Any
+    storage: InteractionStore
     profile_filter: Any
     current_job: str
     source: str

@@ -83,3 +83,16 @@ already follow SRP).
 
 - Gemini plan review attempted 2026-09-22 and returned no answer (quota or rate limit).
   No findings yet.
+
+## Status (2026-09-24)
+
+- 7a merged (phone-tested 2026-09-23 16:01, 45 min, blogger-followers).
+- 7b, 7c, 7d on stacked branches `audit/batch-7b-handlers-take-ctx` →
+  `audit/batch-7c-handler-classes` → `audit/batch-7d-storage-protocol`.
+  The Pi runs 7c from 2026-09-24 08:00 as the phone test for 7b + 7c.
+- `like_from_urls` stays a plain plugin: it likes posts from URLs and never
+  interacts with users, so a handler class would add indirection without
+  removing duplication (flagged to Paul).
+- 7d: `InteractionStore` Protocol (17 methods + account_path/filter_path) in
+  storage.py; `tests/fakes.py:InMemoryStore` is Storage with every path None,
+  so tests use the real rules without disk. requires-python raised to 3.8.

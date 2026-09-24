@@ -19,6 +19,7 @@ import gender_guesser.detector as gender_detector
 from GramAddict.core.config import get_time_last_save
 from GramAddict.core.device_facade import Timeout
 from GramAddict.core.resources import ResourceID as resources
+from GramAddict.core.storage import InteractionStore
 from GramAddict.core.utils import random_sleep
 from GramAddict.core.views import FollowStatus, ProfileView
 
@@ -133,7 +134,7 @@ class Profile(object):
 class Filter:
     conditions = None
 
-    def __init__(self, storage=None):
+    def __init__(self, storage: Optional[InteractionStore] = None):
         filter_path = storage.filter_path
         if configs.args.disable_filters:
             logger.warning(
