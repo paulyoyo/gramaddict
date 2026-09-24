@@ -307,6 +307,9 @@ class ActionReplyDMs(Plugin):
                 logger.info("DM inbox didn't load; checking the queue in random order.")
                 device.back()
                 return []
+            # Instagram keeps the list's scroll position between visits; unread
+            # threads are near the top.
+            thread_list.fling(Direction.UP)
             rows, last_dump = [], None
             for _ in range(pages):
                 dump = device.deviceV2.dump_hierarchy()
