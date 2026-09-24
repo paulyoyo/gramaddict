@@ -124,7 +124,7 @@ Stack rubric:
 - To override the rubric for this repo, put a custom one in `.claude/agy-rubric.md`.
 
 Verification (edit for this project; leave as is to use the rubric's defaults):
-- Checks: <e.g. bin/rails test | uv run pytest | npm run build | cmake --build build --config Release>
+- Checks: `python -m pytest` (config in pyproject.toml; CI runs it on Python 3.9 and 3.11), then `pyflakes` on the changed files.
 
 Plans:
 - For any change that touches more than a couple of files, write the plan to `plans/<yyyy-mm-dd>-<feature>.md` before implementing: goal, affected files, steps in safe order, tests or smoke checks, open questions.
