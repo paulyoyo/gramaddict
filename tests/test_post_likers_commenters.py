@@ -8,9 +8,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-import os
-import tempfile
+from unittest.mock import MagicMock, patch
 
 
 class TestURLValidation:
@@ -171,58 +169,6 @@ class TestPluginArguments:
                 assert arg.get("default") is not None
 
 
-class TestFileReading:
-    """Tests for reading post URLs from files."""
-
-    def test_reads_urls_from_file(self):
-        """Test that plugin can read URLs from a text file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write("https://www.instagram.com/p/ABC123/\n")
-            f.write("# This is a comment\n")
-            f.write("https://www.instagram.com/reel/XYZ789/\n")
-            f.write("\n")  # Empty line
-            f.write("https://www.instagram.com/p/DEF456/\n")
-            temp_path = f.name
-
-        try:
-            with open(temp_path, "r", encoding="utf-8") as f:
-                lines = [
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.strip().startswith("#")
-                ]
-
-            assert len(lines) == 3
-            assert "https://www.instagram.com/p/ABC123/" in lines
-            assert "https://www.instagram.com/reel/XYZ789/" in lines
-            assert "https://www.instagram.com/p/DEF456/" in lines
-        finally:
-            os.unlink(temp_path)
-
-    def test_ignores_comments_and_empty_lines(self):
-        """Test that comments and empty lines are ignored."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write("# Header comment\n")
-            f.write("\n")
-            f.write("https://www.instagram.com/p/ABC123/\n")
-            f.write("   # Indented comment\n")
-            f.write("   \n")  # Whitespace only
-            f.write("https://www.instagram.com/p/XYZ789/\n")
-            temp_path = f.name
-
-        try:
-            with open(temp_path, "r", encoding="utf-8") as f:
-                lines = [
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.strip().startswith("#")
-                ]
-
-            assert len(lines) == 2
-        finally:
-            os.unlink(temp_path)
-
-
 class TestPluginDescription:
     """Tests for plugin metadata."""
 
@@ -243,7 +189,8 @@ class TestPluginDescription:
         """Test that plugin has a description."""
         assert plugin_instance.description is not None
         assert len(plugin_instance.description) > 0
-        assert "liker" in plugin_instance.description.lower() or "commenter" in plugin_instance.description.lower()
+        description = plugin_instance.description.lower()
+        assert "liked" in description and "commented" in description
 
 
 class TestViewsCommentMethods:

@@ -30,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 analytics = ["matplotlib==3.4.2"]
-dev = ["flit", "pre-commit", "black", "flake8", "isort", "ruff"]
+dev = ["flit", "pre-commit", "black", "flake8", "isort", "ruff", "pytest>=7"]
 
 [project.urls]
 Documentation = "https://docs.gramaddict.org/#/"
@@ -38,3 +38,7 @@ Source = "https://github.com/GramAddict/bot"
 
 [project.scripts]
 gramaddict = "GramAddict.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

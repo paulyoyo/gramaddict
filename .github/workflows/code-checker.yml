@@ -21,7 +21,7 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.run-lint == 'true' || github.event_name == 'push' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.run-lint == 'true' }}
     steps:
       - name: Clone Repository
         uses: actions/checkout@v3
@@ -29,18 +29,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '>=3.6'
+          python-version: '3.11'
 
       - name: Run black
         uses: psf/black@stable
 
   static-check:
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.run-static-check == 'true' || github.event_name == 'push' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.run-static-check == 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.8', '3.9', '3.10', '3.11']
     steps:
       - name: Clone Repository
         uses: actions/checkout@v3
@@ -57,3 +57,28 @@ jobs:
 
       - name: Detect errors with pyflakes
         run: pyflakes .
+
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is what the Raspberry Pi runs
+        python-version: ['3.9', '3.11']
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip3 install --upgrade pip
+          # uiautomator2 2.16 still imports pkg_resources
+          pip3 install -r requirements.txt "setuptools<70" "pytest>=7"
+
+      - name: Run tests
+        run: python -m pytest -q

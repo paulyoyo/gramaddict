@@ -11,10 +11,8 @@ Tests cover:
 """
 
 import os
-import sys
 import tempfile
-from unittest.mock import MagicMock, Mock, patch
-from typing import Tuple
+from unittest.mock import Mock, patch
 
 import pytest
 

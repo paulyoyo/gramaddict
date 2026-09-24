@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from unittest.mock import mock_open
 
 import pytest
@@ -10,7 +11,7 @@ import GramAddict.plugins.telegram as TelegramReports
 @pytest.fixture
 def mock_session_data_raw():
     """Provides session data in raw format"""
-    with open(r"mock_data\sessions.json", "r") as file:
+    with open(Path(__file__).parent / "mock_data" / "sessions.json", "r") as file:
         return file.read()
 
 
@@ -88,9 +89,9 @@ def mock_weekly_average():
     }
 
 
-def test_load_sessions(mocker, mock_session_data_raw):
+def test_load_sessions(monkeypatch, mock_session_data_raw):
     """Test if the function returns a list of dictionaries"""
-    mocker.patch("builtins.open", mock_open(read_data=mock_session_data_raw))
+    monkeypatch.setattr("builtins.open", mock_open(read_data=mock_session_data_raw))
     result = TelegramReports.load_sessions("test_user")
     assert isinstance(result, list), "Expected a list"
     assert isinstance(result[0], dict), "Expected a dictionary"
