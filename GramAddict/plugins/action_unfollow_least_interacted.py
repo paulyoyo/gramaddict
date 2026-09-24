@@ -106,7 +106,7 @@ class ActionUnfollowLeastInteracted(Plugin):
             configs=configs,
         )
         def job():
-            self.unfollow_least_interacted(
+            ran = self.unfollow_least_interacted(
                 device,
                 count - self.state.unfollowed_count,
                 self.on_unfollow,
@@ -120,8 +120,10 @@ class ActionUnfollowLeastInteracted(Plugin):
             )
             self.state.is_job_completed = True
 
-            # Mark the job as completed in storage
-            self._mark_least_interacted_completed(storage)
+            # Start the cooldown only if the category opened; otherwise try again
+            # next session instead of waiting a full cooldown for nothing.
+            if ran:
+                self._mark_least_interacted_completed(storage)
             device.back()
 
         while not self.state.is_job_completed and (self.state.unfollowed_count < count):
@@ -192,7 +194,7 @@ class ActionUnfollowLeastInteracted(Plugin):
         # Navigate to Categories and select "Least interacted with"
         if not self._navigate_to_least_interacted_category(device):
             logger.error("Could not navigate to 'Least interacted with' category. Finish.")
-            return
+            return False
 
         self.iterate_over_least_interacted(
             device,
@@ -203,6 +205,7 @@ class ActionUnfollowLeastInteracted(Plugin):
             posts_end_detector,
             job_name,
         )
+        return True
 
     def _navigate_to_least_interacted_category(self, device) -> bool:
         """Navigate to the 'Least interacted with' category"""
@@ -213,7 +216,7 @@ class ActionUnfollowLeastInteracted(Plugin):
 
         # Use the exact resource ID and text from Appium Inspector
         least_interacted_option = device.find(
-            resourceId="com.instagram.android:id/title",
+            resourceId=f"{self.args.app_id}:id/title",
             text="Least interacted with"
         )
 

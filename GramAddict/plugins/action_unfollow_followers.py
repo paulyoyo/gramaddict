@@ -1,5 +1,5 @@
 import logging
-from enum import Enum, unique
+from enum import Enum, auto, unique
 
 from colorama import Fore
 
@@ -20,7 +20,6 @@ from GramAddict.core.views import (
     Direction,
     FollowingView,
     ProfileView,
-    SearchView,
     TabBarView,
     UniversalActions,
 )
@@ -29,6 +28,25 @@ logger = logging.getLogger(__name__)
 
 FOLLOWING_REGEX = "^Following|^Requested"
 UNFOLLOW_REGEX = "^Unfollow"
+NOT_FOLLOWING_REGEX = "(?i)^(Follow|Follow Back)$"
+
+
+class UnfollowResult(Enum):
+    UNFOLLOWED = auto()
+    NOT_FOLLOWING = auto()  # profile shows Follow / Follow Back: nothing to undo
+    FAILED = auto()  # a UI step failed: leave it for the next run
+
+
+def should_unfollow(check_if_is_follower, unfollow_followers, is_following_you) -> bool:
+    """check_if_is_follower: the mode depends on whether they follow you.
+    unfollow_followers: unfollow-any-followers (only people who follow you);
+    otherwise the non-followers modes (only people who don't).
+    is_following_you: True / False, or None when it couldn't be checked."""
+    if not check_if_is_follower:
+        return True
+    if is_following_you is None:
+        return False
+    return is_following_you if unfollow_followers else not is_following_you
 
 # Instagram following list categories
 FOLLOWING_CATEGORIES = [
@@ -245,8 +263,8 @@ class ActionUnfollowFollowers(Plugin):
         self.state.unfollowed_count += 1
         self.session_state.totalUnfollowed += 1
 
-    def do_unfollow_from_profile(self, device):
-        """Unfollow user from their profile page (assumes we're already on the profile)."""
+    def do_unfollow_from_profile(self, device) -> "UnfollowResult":
+        """Unfollow from the profile page that is open on screen."""
         unfollow_button = device.find(
             classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
             clickable=True,
@@ -266,9 +284,16 @@ class ActionUnfollowFollowers(Plugin):
             )
 
         if not unfollow_button.exists():
+            follow_button = device.find(
+                classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+                clickable=True,
+                textMatches=NOT_FOLLOWING_REGEX,
+            )
+            if follow_button.exists():
+                return UnfollowResult.NOT_FOLLOWING
             logger.error("Cannot find Following button on profile.")
             save_crash(device)
-            return False
+            return UnfollowResult.FAILED
 
         logger.debug("Unfollow button click.")
         unfollow_button.click()
@@ -286,7 +311,7 @@ class ActionUnfollowFollowers(Plugin):
         if not confirm_unfollow_button or not confirm_unfollow_button.exists():
             logger.error("Cannot confirm unfollow.")
             save_crash(device)
-            return False
+            return UnfollowResult.FAILED
 
         logger.debug("Confirm unfollow.")
         confirm_unfollow_button.click()
@@ -302,7 +327,7 @@ class ActionUnfollowFollowers(Plugin):
             private_unfollow_button.click()
 
         UniversalActions.detect_block(device)
-        return True
+        return UnfollowResult.UNFOLLOWED
 
     def unfollow_from_list(
         self, device, count, on_unfollow, storage, my_username, job_name
@@ -344,7 +369,8 @@ class ActionUnfollowFollowers(Plugin):
                 continue
 
             # We're now on the user's profile - unfollow
-            if self.do_unfollow_from_profile(device):
+            result = self.do_unfollow_from_profile(device)
+            if result == UnfollowResult.UNFOLLOWED:
                 logger.info(
                     f"Unfollowed @{username}.",
                     extra={"color": f"{Fore.YELLOW}"},
@@ -356,8 +382,8 @@ class ActionUnfollowFollowers(Plugin):
                     job_name=job_name,
                 )
                 on_unfollow()
-            else:
-                # Not following this user anymore — mark as unfollowed to clean up stale data
+            elif result == UnfollowResult.NOT_FOLLOWING:
+                # Already not following (unfollowed by hand): clean up the stale record.
                 logger.warning(f"Not following @{username}. Marking as unfollowed.")
                 storage.add_interacted_user(
                     username,
@@ -365,6 +391,9 @@ class ActionUnfollowFollowers(Plugin):
                     unfollowed=True,
                     job_name=job_name,
                 )
+            else:
+                # UI problem: record nothing, so @username is picked again next run.
+                logger.warning(f"Could not unfollow @{username} now. Will retry next run.")
 
             # Navigate back to home before next search
             device.back()
@@ -381,14 +410,14 @@ class ActionUnfollowFollowers(Plugin):
         # Structure: Button (container) with content-desc="Most shown in feed"
         #            └─ TextView (title) with text="Most shown in feed"
         category_option = device.find(
-            resourceId="com.instagram.android:id/container",
+            resourceId=f"{self.args.app_id}:id/container",
             descriptionMatches=f"(?i).*{category_name}.*"
         )
         
         if not category_option.exists(Timeout.SHORT):
             # Fallback: try finding by title text
             category_option = device.find(
-                resourceId="com.instagram.android:id/title",
+                resourceId=f"{self.args.app_id}:id/title",
                 textMatches=f"(?i).*{category_name}.*"
             )
         
@@ -741,9 +770,8 @@ class ActionUnfollowFollowers(Plugin):
         check_if_is_follower,
         unfollow_followers=False,
     ):
-        """
-        :return: whether unfollow was successful
-        """
+        """Open @username from the followings list and unfollow them if the mode
+        allows it. Returns whether they were unfollowed."""
         username_view = device.find(
             resourceId=self.ResourceID.FOLLOW_LIST_USERNAME,
             className=ClassName.TEXT_VIEW,
@@ -755,82 +783,30 @@ class ActionUnfollowFollowers(Plugin):
         # Click left edge to navigate to profile (avoid Follow buttons on right in v300+)
         username_view.click_retry(mode=Location.LEFTEDGE)
 
-        is_following_you = self.check_is_follower(device, username, my_username)
-        if is_following_you is not None:
-            if check_if_is_follower and is_following_you:
-                if not unfollow_followers:
-                    logger.info(f"Skip @{username}. This user is following you.")
-                    logger.info("Back to the followings list.")
-                    device.back()
-                    return False
-                else:
-                    logger.info(f"@{username} is following you, unfollow. 😈")
-            unfollow_button = device.find(
-                classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
-                clickable=True,
-                textMatches=FOLLOWING_REGEX,
-            )
-            # I don't know/remember the origin of this, if someone does - let's document it
-            attempts = 2
-            for _ in range(attempts):
-                if unfollow_button.exists():
-                    break
-
-                scrollable = device.find(classNameMatches=ClassName.VIEW_PAGER)
-                if scrollable.exists():
-                    scrollable.scroll(Direction.UP)
-                unfollow_button = device.find(
-                    classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
-                    clickable=True,
-                    textMatches=FOLLOWING_REGEX,
-                )
-
-            if not unfollow_button.exists():
-                logger.error("Cannot find Following button.")
-                save_crash(device)
-            logger.debug("Unfollow button click.")
-            unfollow_button.click()
-            logger.info(f"Unfollow @{username}.", extra={"color": f"{Fore.YELLOW}"})
-
-            # Weirdly enough, this is a fix for after you unfollow someone that follows
-            # you back - the next person you unfollow the button is missing on first find
-            # additional find - finds it. :shrug:
-            confirm_unfollow_button = None
-            attempts = 2
-            for _ in range(attempts):
-                confirm_unfollow_button = device.find(
-                    resourceId=self.ResourceID.FOLLOW_SHEET_UNFOLLOW_ROW
-                )
-                if confirm_unfollow_button.exists(Timeout.SHORT):
-                    break
-
-            if not confirm_unfollow_button or not confirm_unfollow_button.exists():
-                logger.error("Cannot confirm unfollow.")
-                save_crash(device)
-                device.back()
-                return False
-            logger.debug("Confirm unfollow.")
-            confirm_unfollow_button.click()
-
-            random_sleep(0, 1, modulable=False)
-
-            # Check if private account confirmation
-            private_unfollow_button = device.find(
-                classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
-                textMatches=UNFOLLOW_REGEX,
-            )
-            if private_unfollow_button.exists(Timeout.SHORT):
-                logger.debug("Confirm unfollow private account.")
-                private_unfollow_button.click()
-
-            UniversalActions.detect_block(device)
-        else:
+        is_following_you = (
+            self.check_is_follower(device, username, my_username)
+            if check_if_is_follower
+            else None
+        )
+        if not should_unfollow(check_if_is_follower, unfollow_followers, is_following_you):
+            if is_following_you is None:
+                logger.info(f"Skip @{username}. Could not check if they follow you.")
+            elif is_following_you:
+                logger.info(f"Skip @{username}. This user is following you.")
+            else:
+                logger.info(f"Skip @{username}. This user doesn't follow you.")
             logger.info("Back to the followings list.")
             device.back()
             return False
+        if is_following_you and unfollow_followers:
+            logger.info(f"@{username} is following you, unfollow. 😈")
+
+        result = self.do_unfollow_from_profile(device)
+        if result == UnfollowResult.UNFOLLOWED:
+            logger.info(f"Unfollow @{username}.", extra={"color": f"{Fore.YELLOW}"})
         logger.info("Back to the followings list.")
         device.back()
-        return True
+        return result == UnfollowResult.UNFOLLOWED
 
     def check_is_follower(self, device, username, my_username):
         logger.info(
