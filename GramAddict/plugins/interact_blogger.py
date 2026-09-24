@@ -117,27 +117,7 @@ class InteractBloggerPostLikers(Plugin):
                 break
 
     def handle_blogger(self, ctx):
-        handle_blogger(
-            self,
-            ctx.device,
-            ctx.session_state,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.profile_filter,
-            ctx.on_interaction,
-            ctx.interaction,
-            ctx.is_follow_limit_reached,
-        )
+        handle_blogger(ctx)
 
     def handle_blogger_from_file(self, ctx):
-        handle_blogger_from_file(
-            self,
-            ctx.device,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.on_interaction,
-            ctx.interaction,
-            ctx.is_follow_limit_reached,
-        )
+        handle_blogger_from_file(ctx)

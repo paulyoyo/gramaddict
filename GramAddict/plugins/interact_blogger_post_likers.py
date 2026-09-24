@@ -114,16 +114,4 @@ class InteractBloggerPostLikers(Plugin):
             skipped_fling_limit=skipped_fling_limit,
         )
 
-        handle_likers(
-            self,
-            ctx.device,
-            ctx.session_state,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.profile_filter,
-            posts_end_detector,
-            ctx.on_interaction,
-            ctx.interaction,
-            ctx.is_follow_limit_reached,
-        )
+        handle_likers(ctx, posts_end_detector)

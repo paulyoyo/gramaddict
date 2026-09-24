@@ -103,17 +103,4 @@ class InteractPlacePosts(Plugin):
                 break
 
     def handle_place(self, ctx):
-        handle_posts(
-            self,
-            ctx.device,
-            ctx.session_state,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.profile_filter,
-            ctx.on_interaction,
-            ctx.interaction,
-            ctx.is_follow_limit_reached,
-            ctx.percentages.interact,
-            self.args.scrape_to_file,
-        )
+        handle_posts(ctx)

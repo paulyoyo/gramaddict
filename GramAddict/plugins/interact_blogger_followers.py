@@ -117,16 +117,4 @@ class InteractBloggerFollowers_Following(Plugin):
             skipped_list_limit=skipped_list_limit,
             skipped_fling_limit=skipped_fling_limit,
         )
-        handle_followers(
-            self,
-            ctx.device,
-            ctx.session_state,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.on_interaction,
-            ctx.interaction,
-            ctx.is_follow_limit_reached,
-            posts_end_detector,
-            ctx.profile_filter,
-        )
+        handle_followers(ctx, posts_end_detector)

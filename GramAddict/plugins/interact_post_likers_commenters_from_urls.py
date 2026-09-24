@@ -1,5 +1,6 @@
 import logging
 import os
+from dataclasses import replace
 from os import path
 from random import seed, shuffle
 
@@ -198,9 +199,14 @@ class InteractPostLikersCommentersFromURLs(Plugin):
             logger.warning(f"Could not open post: {url}")
             return
 
-        # follows are counted per post URL, not per file
-        is_follow_limit_reached = follow_limit_checker(
-            self.args, self.session_state, url
+        # This post is the source: follows are counted per URL, not per file.
+        post_ctx = replace(
+            ctx,
+            source=url,
+            current_job="post-likers-commenters-from-file",
+            is_follow_limit_reached=follow_limit_checker(
+                self.args, self.session_state, url
+            ),
         )
 
         skipped_list_limit = get_value(self.args.skipped_list_limit, None, 15)
@@ -208,12 +214,7 @@ class InteractPostLikersCommentersFromURLs(Plugin):
 
         if self.args.interact_likers:
             self._interact_with_likers(
-                url,
-                ctx.on_interaction,
-                ctx.interaction,
-                is_follow_limit_reached,
-                skipped_list_limit,
-                skipped_fling_limit,
+                post_ctx, skipped_list_limit, skipped_fling_limit
             )
 
         if self.args.interact_commenters:
@@ -221,26 +222,13 @@ class InteractPostLikersCommentersFromURLs(Plugin):
                 logger.warning(f"Could not reopen post for commenters: {url}")
             else:
                 self._interact_with_commenters(
-                    url,
-                    ctx.on_interaction,
-                    ctx.interaction,
-                    is_follow_limit_reached,
-                    skipped_list_limit,
-                    skipped_fling_limit,
+                    post_ctx, skipped_list_limit, skipped_fling_limit
                 )
 
         logger.info("Going back from post...")
         self.device.back()
 
-    def _interact_with_likers(
-        self,
-        url,
-        on_interaction,
-        interaction,
-        is_follow_limit_reached,
-        skipped_list_limit,
-        skipped_fling_limit,
-    ):
+    def _interact_with_likers(self, ctx, skipped_list_limit, skipped_fling_limit):
         has_likers, number_of_likers = PostsViewList(self.device)._find_likers_container()
 
         if not has_likers:
@@ -267,30 +255,9 @@ class InteractPostLikersCommentersFromURLs(Plugin):
             skipped_fling_limit=skipped_fling_limit,
         )
 
-        handle_likers_from_post(
-            self,
-            self.device,
-            self.session_state,
-            url,
-            "post-likers-commenters-from-file",
-            self.storage,
-            self.profile_filter,
-            likers_end_detector,
-            on_interaction,
-            interaction,
-            is_follow_limit_reached,
-            likers_limit,
-        )
+        handle_likers_from_post(ctx, likers_end_detector, likers_limit)
 
-    def _interact_with_commenters(
-        self,
-        url,
-        on_interaction,
-        interaction,
-        is_follow_limit_reached,
-        skipped_list_limit,
-        skipped_fling_limit,
-    ):
+    def _interact_with_commenters(self, ctx, skipped_list_limit, skipped_fling_limit):
         commenters_limit = get_value(self.args.commenters_limit_per_post, None, 10)
         commenters_end_detector = ScrollEndDetector(
             repeats_to_end=2,
@@ -300,17 +267,4 @@ class InteractPostLikersCommentersFromURLs(Plugin):
 
         logger.info("Looking for commenters...", extra={"color": f"{Fore.GREEN}"})
 
-        handle_commenters(
-            self,
-            self.device,
-            self.session_state,
-            url,
-            "post-likers-commenters-from-file",
-            self.storage,
-            self.profile_filter,
-            commenters_end_detector,
-            on_interaction,
-            interaction,
-            is_follow_limit_reached,
-            commenters_limit,
-        )
+        handle_commenters(ctx, commenters_end_detector, commenters_limit)

@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from random import seed
 
 from colorama import Style
@@ -81,17 +82,5 @@ class InteractOwnFeed(Plugin):
             return
 
     def handle_feed(self, ctx):
-        handle_posts(
-            self,
-            ctx.device,
-            ctx.session_state,
-            ctx.source,
-            ctx.current_job,
-            ctx.storage,
-            ctx.profile_filter,
-            ctx.on_interaction,
-            ctx.interaction,
-            None,  # own feed has no per-source follow limit
-            ctx.percentages.interact,
-            self.args.scrape_to_file,
-        )
+        # own feed has no per-source follow limit
+        handle_posts(replace(ctx, is_follow_limit_reached=None))
