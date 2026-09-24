@@ -163,8 +163,11 @@ class TabBarView:
         if button is None or not button.exists(Timeout.SHORT):
             if tab in tab_descriptions:
                 logger.debug(f"{tab_name} tab not found by resource ID, trying description...")
+                # packageName: Android's own nav bar also has a "Home" button;
+                # tapping it sends Instagram to the background.
                 button = self.device.find(
                     descriptionMatches=case_insensitive_re(tab_descriptions[tab]),
+                    packageName=self.device.app_id,
                 )
 
         # Method 3: Find by tab_button_name_text (Instagram v300+)

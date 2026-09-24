@@ -15,13 +15,13 @@ from GramAddict.core.deepseek import (
     classify_intent,
     load_deepseek_config,
 )
-from GramAddict.core.device_facade import Direction, Mode, Timeout
+from GramAddict.core.device_facade import DeviceFacade, Direction, Mode, Timeout
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.resources import ClassName
 from GramAddict.core.resources import ResourceID as resources
 from GramAddict.core.slack import load_slack_config, slack_send_text
-from GramAddict.core.utils import get_value
-from GramAddict.core.views import ProfileView, TabBarView
+from GramAddict.core.utils import get_value, open_instagram
+from GramAddict.core.views import ProfileView, TabBarView, UniversalActions
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +236,13 @@ class ActionReplyDMs(Plugin):
             target = entry.get("username")
             try:
                 self._process_user(device, storage, entry, plugin)
+            except DeviceFacade.AppHasCrashed:
+                # Without this every remaining user fails in a second and the
+                # next job starts with Instagram closed.
+                logger.warning("Instagram closed during reply-dms. Reopening it.")
+                if not open_instagram(device):
+                    logger.error("Could not reopen Instagram. Ending this reply round.")
+                    break
             except Exception as e:
                 logger.error(f"Error while handling @{target}: {e}")
 
@@ -422,6 +429,9 @@ class ActionReplyDMs(Plugin):
         if not send_button.exists(Timeout.SHORT):
             return False
         send_button.click()
+        # Otherwise the caller's back() only closes the keyboard and we stay in
+        # the thread, where there is no tab bar to navigate from.
+        UniversalActions.close_keyboard(device)
         return True
 
     @staticmethod
