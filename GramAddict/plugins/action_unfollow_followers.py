@@ -11,6 +11,7 @@ from GramAddict.core.resources import ResourceID as resources
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
 from GramAddict.core.storage import FollowingStatus
 from GramAddict.core.utils import (
+    open_instagram_profile,
     get_value,
     inspect_current_view,
     random_sleep,
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 FOLLOWING_REGEX = "^Following|^Requested"
 UNFOLLOW_REGEX = "^Unfollow"
 NOT_FOLLOWING_REGEX = "(?i)^(Follow|Follow Back)$"
+# Deleted, banned or renamed accounts: nothing left to unfollow.
+UNAVAILABLE_REGEX = "(?i).*(isn.t available|not available|user not found).*"
 
 
 class UnfollowResult(Enum):
@@ -263,6 +266,24 @@ class ActionUnfollowFollowers(Plugin):
         self.state.unfollowed_count += 1
         self.session_state.totalUnfollowed += 1
 
+    def open_profile(self, device, username) -> str:
+        """Open @username by link and wait for the page. Returns "loaded",
+        "unavailable" (deleted/banned account) or "failed"."""
+        if not open_instagram_profile(username):
+            return "failed"
+        buttons = device.find(
+            classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
+            textMatches=f"(?i)({FOLLOWING_REGEX})|^(Follow|Follow Back)$",
+        )
+        unavailable = device.find(textMatches=UNAVAILABLE_REGEX)
+        for _ in range(3):
+            if buttons.exists(Timeout.LONG):
+                return "loaded"
+            if unavailable.exists(Timeout.TINY):
+                return "unavailable"
+        logger.warning(f"@{username}'s profile didn't load.")
+        return "failed"
+
     def do_unfollow_from_profile(self, device) -> "UnfollowResult":
         """Unfollow from the profile page that is open on screen."""
         unfollow_button = device.find(
@@ -332,7 +353,9 @@ class ActionUnfollowFollowers(Plugin):
     def unfollow_from_list(
         self, device, count, on_unfollow, storage, my_username, job_name
     ):
-        """Search-based unfollow: build list from JSON, search each user, unfollow from profile."""
+        """Unfollow the users the bot followed (from the JSON history), opening
+        each profile directly by its link: search misses most accounts on IG 300
+        and the following list loops over a few users."""
         unfollow_delay = int(self.args.unfollow_delay)
         unfollow_list = storage.get_unfollowable_users(unfollow_delay, count)
 
@@ -355,21 +378,17 @@ class ActionUnfollowFollowers(Plugin):
                 return
 
             logger.info(
-                f"Searching for @{username} to unfollow...",
+                f"Opening @{username}'s profile to unfollow...",
                 extra={"color": f"{Fore.YELLOW}"},
             )
-
-            # Navigate to search and find user
-            search_view = TabBarView(device).navigateToSearch()
-            if not search_view.navigate_to_target(username, "unfollow"):
-                logger.warning(f"Could not find @{username} in search. Skipping.")
-                device.back()
-                TabBarView(device).navigateToHome()
-                random_sleep(2, 4)
-                continue
-
-            # We're now on the user's profile - unfollow
-            result = self.do_unfollow_from_profile(device)
+            page = self.open_profile(device, username)
+            if page == "unavailable":
+                result = UnfollowResult.NOT_FOLLOWING
+                logger.info(f"@{username}'s account isn't available anymore.")
+            elif page == "loaded":
+                result = self.do_unfollow_from_profile(device)
+            else:
+                result = UnfollowResult.FAILED
             if result == UnfollowResult.UNFOLLOWED:
                 logger.info(
                     f"Unfollowed @{username}.",

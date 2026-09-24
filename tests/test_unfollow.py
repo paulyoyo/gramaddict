@@ -1,4 +1,5 @@
 """Who gets unfollowed, and what is recorded (batch 10)."""
+import subprocess
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -86,6 +87,8 @@ class FakeProfile:
             name = "follow"
         elif kw.get("resourceId") == self.rid.FOLLOW_SHEET_UNFOLLOW_ROW:
             name = "confirm"
+        elif text == m.UNFOLLOW_REGEX:
+            name = "private-confirm"
         else:
             name = "other"
         return FakeView(name in self.buttons, self.clicks, name)
@@ -105,6 +108,12 @@ def _plugin():
         (("follow",), UnfollowResult.NOT_FOLLOWING, []),
         ((), UnfollowResult.FAILED, []),  # nothing recognisable on screen
         (("following",), UnfollowResult.FAILED, ["following"]),  # confirm sheet never came
+        # private account: after the sheet, Instagram asks "Unfollow <name>?" once more
+        (
+            ("following", "confirm", "private-confirm"),
+            UnfollowResult.UNFOLLOWED,
+            ["following", "confirm", "private-confirm"],
+        ),
     ],
 )
 def test_profile_unfollow_outcomes(buttons, result, clicks):
@@ -127,31 +136,36 @@ class FakeTabBar:
     def __init__(self, device):
         pass
 
-    def navigateToSearch(self):
-        return SimpleNamespace(navigate_to_target=lambda username, job: True)
-
     def navigateToHome(self):
         pass
 
 
 @pytest.mark.parametrize(
-    "result, status, counted",
+    "page, result, status, counted",
     [
-        (UnfollowResult.UNFOLLOWED, FollowingStatus.UNFOLLOWED, 1),
-        (UnfollowResult.NOT_FOLLOWING, FollowingStatus.UNFOLLOWED, 0),
+        ("loaded", UnfollowResult.UNFOLLOWED, FollowingStatus.UNFOLLOWED, 1),
+        ("loaded", UnfollowResult.NOT_FOLLOWING, FollowingStatus.UNFOLLOWED, 0),
         # the bug: a UI failure used to be recorded as UNFOLLOWED, so never retried
-        (UnfollowResult.FAILED, FollowingStatus.FOLLOWED, 0),
+        ("loaded", UnfollowResult.FAILED, FollowingStatus.FOLLOWED, 0),
+        # deleted / banned account: nothing to undo, clean the record
+        ("unavailable", None, FollowingStatus.UNFOLLOWED, 0),
+        # the link didn't open the profile: record nothing, retry next run
+        ("failed", None, FollowingStatus.FOLLOWED, 0),
     ],
 )
-def test_search_unfollow_records_only_real_outcomes(monkeypatch, result, status, counted):
+def test_unfollow_job_records_only_real_outcomes(monkeypatch, page, result, status, counted):
     monkeypatch.setattr(m, "TabBarView", FakeTabBar)
     plugin = _plugin()
+    monkeypatch.setattr(plugin, "open_profile", lambda device, username: page)
     plugin.args.unfollow_delay = "3"
     plugin.state = SimpleNamespace(is_job_completed=False)
     plugin.session_state = SimpleNamespace(
         id="now", check_limit=lambda **k: False, Limit=SimpleNamespace(UNFOLLOWS="u")
     )
-    monkeypatch.setattr(plugin, "do_unfollow_from_profile", lambda device: result)
+    opened = []
+    monkeypatch.setattr(
+        plugin, "do_unfollow_from_profile", lambda device: opened.append(1) or result
+    )
     store = _store_with_bot_followed("ana")
     unfollows = []
 
@@ -160,8 +174,9 @@ def test_search_unfollow_records_only_real_outcomes(monkeypatch, result, status,
 
     assert store.get_following_status("ana") == status
     assert len(unfollows) == counted
+    assert len(opened) == (page == "loaded")  # only unfollow on a loaded profile
     # a failed one is still eligible next run
-    assert ("ana" in store.get_unfollowable_users(3, 5)) is (result == UnfollowResult.FAILED)
+    assert ("ana" in store.get_unfollowable_users(3, 5)) is (status == FollowingStatus.FOLLOWED)
 
 
 # --- do_unfollow: only checks "follows you" when the mode needs it ------------------
@@ -190,3 +205,19 @@ def test_any_followers_skips_a_non_follower(monkeypatch):
     )
     assert plugin.do_unfollow(device, "ana", "me", True, unfollow_followers=True) is False
     assert unfollowed == []
+
+
+def test_profile_link_goes_to_the_instagram_app(monkeypatch):
+    calls = []
+
+    def fake_adb(device_id, *args, **kw):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "Starting: Intent", "")
+
+    monkeypatch.setattr(utils, "adb", fake_adb)
+    monkeypatch.setattr(utils, "configs", SimpleNamespace(device_id=None), raising=False)
+    monkeypatch.setattr(utils, "app_id", APP, raising=False)
+    assert utils.open_instagram_profile("ana.perez") is True
+    args = calls[0]
+    assert "https://www.instagram.com/ana.perez/" in args
+    assert args[args.index("-p") + 1] == APP

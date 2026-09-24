@@ -212,6 +212,27 @@ def open_instagram_with_url(url) -> bool:
     return True
 
 
+def open_instagram_profile(username) -> bool:
+    """Open @username's profile through its instagram.com link, handled by the
+    Instagram app itself (-p): exact, and no search needed."""
+    result = adb(
+        configs.device_id,
+        "shell",
+        "am",
+        "start",
+        "-a",
+        "android.intent.action.VIEW",
+        "-d",
+        device_quote(f"https://www.instagram.com/{username}/"),
+        "-p",
+        app_id,
+    )
+    if result.returncode != 0 or "Error" in result.stdout + result.stderr:
+        logger.debug(f"Could not open the profile link: {result.stderr.strip()}")
+        return False
+    return True
+
+
 def kill_app(device, app_id):
     device.deviceV2.app_stop(app_id)
 
