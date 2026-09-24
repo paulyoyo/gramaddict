@@ -9,8 +9,8 @@ from time import sleep
 from colorama import Fore
 
 from GramAddict.core.deepseek import (
+    ERROR,
     NO,
-    UNSURE,
     YES,
     classify_intent,
     load_deepseek_config,
@@ -232,6 +232,7 @@ class ActionReplyDMs(Plugin):
             f"Checking {len(pending)} user(s) for replies.",
             extra={"color": f"{Fore.BLUE}"},
         )
+        aborted = False
         for entry in pending:
             target = entry.get("username")
             try:
@@ -242,11 +243,15 @@ class ActionReplyDMs(Plugin):
                 logger.warning("Instagram closed during reply-dms. Reopening it.")
                 if not open_instagram(device):
                     logger.error("Could not reopen Instagram. Ending this reply round.")
+                    aborted = True
                     break
             except Exception as e:
                 logger.error(f"Error while handling @{target}: {e}")
 
-        self._mark_completed(storage)
+        # An aborted round didn't check everyone: let the next session retry
+        # instead of starting the cooldown.
+        if not aborted:
+            self._mark_completed(storage)
 
     def _process_user(self, device, storage, entry, plugin):
         target = entry.get("username")
@@ -337,7 +342,9 @@ class ActionReplyDMs(Plugin):
             storage.update_pending_reply(target, unreachable=misses)
 
     def _classify(self, question, reply_text):
-        if is_obvious_yes(reply_text):
+        # A bare 🔥 after the YouTube link is praise, not "yes, I use SoundCloud".
+        has_words = re.search(r"[^\W\d_]", reply_text or "")
+        if is_obvious_yes(reply_text) and (question != Q_SOUNDCLOUD or has_words):
             return YES
         return classify_intent(self.cfg, question, reply_text)
 
@@ -354,6 +361,8 @@ class ActionReplyDMs(Plugin):
         elif intent == NO:
             logger.info(f"@{target} not interested. Dropping.")
             storage.remove_pending_reply(target)
+        elif intent == ERROR:
+            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
         else:
             self._handoff(target, reply_text, storage)
 
@@ -364,12 +373,14 @@ class ActionReplyDMs(Plugin):
             self._human_reply_pause(target)
             if msg and self._send_reply(device, msg):
                 logger.info(f"Sent SoundCloud link to @{target}. Done.", extra={"color": f"{Fore.GREEN}"})
+                storage.remove_pending_reply(target)
             else:
-                logger.warning(f"Could not send SoundCloud message to @{target}.")
-            storage.remove_pending_reply(target)
+                logger.warning(f"Could not send SoundCloud message to @{target}. Keeping in queue.")
         elif intent == NO:
             logger.info(f"@{target} doesn't use SoundCloud. Done.")
             storage.remove_pending_reply(target)
+        elif intent == ERROR:
+            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
         else:
             self._handoff(target, reply_text, storage)
 
@@ -378,14 +389,16 @@ class ActionReplyDMs(Plugin):
             f"DeepSeek unsure about @{target}'s reply. Alerting via Slack for manual handling.",
             extra={"color": f"{Fore.YELLOW}"},
         )
-        if self.slack_webhook:
-            slack_send_text(
-                self.slack_webhook,
-                f":warning: Manual reply needed for @{target}: {reply_text}",
-            )
+        delivered = bool(self.slack_webhook) and slack_send_text(
+            self.slack_webhook,
+            f":warning: Manual reply needed for @{target}: {reply_text}",
+        )
+        if delivered:
+            storage.remove_pending_reply(target)
+        elif not self.slack_webhook:
+            logger.warning(f"No slack.yml webhook configured; keeping @{target} in queue.")
         else:
-            logger.warning("No slack.yml webhook configured; can't alert for handoff.")
-        storage.remove_pending_reply(target)
+            logger.warning(f"Slack alert for @{target} failed; keeping in queue to retry.")
 
     def _fill(self, templates, default_template, link):
         if not link:

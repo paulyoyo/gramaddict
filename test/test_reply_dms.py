@@ -84,8 +84,10 @@ def test_min_hours_filter():
         assert due == ["old"], due
 
 
-def test_classify_intent():
+def test_classify_intent(monkeypatch):
     class FakeResp:
+        status_code = 200
+
         def __init__(self, content):
             self._content = content
 
@@ -100,28 +102,28 @@ def test_classify_intent():
     for content, expected in [
         ("YES", deepseek_mod.YES),
         ("yes, definitely", deepseek_mod.YES),
+        ("**YES**", deepseek_mod.YES),
         ("NO", deepseek_mod.NO),
         ("no thanks", deepseek_mod.NO),
+        ("NOT SURE", deepseek_mod.UNSURE),
         ("maybe later", deepseek_mod.UNSURE),
         ("¿quién eres?", deepseek_mod.UNSURE),
     ]:
-        deepseek_mod.requests.post = lambda *a, **k: FakeResp(content)
+        monkeypatch.setattr(deepseek_mod.requests, "post", lambda *a, _c=content, **k: FakeResp(_c))
         assert deepseek_mod.classify_intent(cfg, "Interested?", "x") == expected, content
 
-    # Network error -> UNSURE (falls back to human)
+    # Unexpected error -> ERROR (the caller keeps the user queued, no handoff)
     def boom(*a, **k):
         raise RuntimeError("network down")
 
-    deepseek_mod.requests.post = boom
-    assert deepseek_mod.classify_intent(cfg, "Interested?", "x") == deepseek_mod.UNSURE
+    monkeypatch.setattr(deepseek_mod.requests, "post", boom)
+    assert deepseek_mod.classify_intent(cfg, "Interested?", "x") == deepseek_mod.ERROR
 
-    # Missing api key -> UNSURE, no call
-    assert deepseek_mod.classify_intent({}, "Interested?", "x") == deepseek_mod.UNSURE
-
+    # Missing api key -> ERROR, no call
+    assert deepseek_mod.classify_intent({}, "Interested?", "x") == deepseek_mod.ERROR
 
 if __name__ == "__main__":
     test_queue_enqueue_update_remove()
     test_add_interacted_user_does_not_touch_queue()
     test_min_hours_filter()
-    test_classify_intent()
     print("all DJ DM-flow checks passed")
