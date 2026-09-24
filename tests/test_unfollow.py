@@ -179,6 +179,59 @@ def test_unfollow_job_records_only_real_outcomes(monkeypatch, page, result, stat
     assert ("ana" in store.get_unfollowable_users(3, 5)) is (status == FollowingStatus.FOLLOWED)
 
 
+class FakeLinkedPage:
+    """What the profile link shows: "profile" (buttons), "blank" (title only) or "nothing"."""
+
+    def __init__(self, screen):
+        self.screen = screen
+
+    def find(self, **kw):
+        if kw.get("resourceId") == ResourceID(APP).ACTION_BAR_TITLE:
+            present = self.screen in ("profile", "blank") and kw.get("text") == "ana"
+        elif kw.get("textMatches") == m.UNAVAILABLE_REGEX:
+            present = False
+        else:  # the Following / Follow buttons
+            present = self.screen == "profile"
+        return FakeView(present, [], "x")
+
+
+@pytest.mark.parametrize(
+    "screen, page",
+    [
+        ("profile", "loaded"),
+        # IG 300: a deleted/renamed account opens as a blank page, title only
+        ("blank", "unavailable"),
+        ("nothing", "failed"),  # the link didn't land on a profile at all
+    ],
+)
+def test_open_profile_tells_blank_page_from_failure(monkeypatch, screen, page):
+    monkeypatch.setattr(m, "open_instagram_profile", lambda username: True)
+    assert _plugin().open_profile(FakeLinkedPage(screen), "ana") == page
+
+
+def test_unfollow_job_stops_after_failures_in_a_row(monkeypatch):
+    # every profile failing used to burn the whole list (57 users, 44 min)
+    monkeypatch.setattr(m, "TabBarView", FakeTabBar)
+    plugin = _plugin()
+    opened = []
+    monkeypatch.setattr(plugin, "open_profile", lambda device, u: opened.append(u) or "failed")
+    plugin.args.unfollow_delay = "3"
+    plugin.state = SimpleNamespace(is_job_completed=False)
+    plugin.session_state = SimpleNamespace(
+        id="now", check_limit=lambda **k: False, Limit=SimpleNamespace(UNFOLLOWS="u")
+    )
+    store = _store_with_bot_followed("ana")
+    for name in ("bo", "cy", "di", "ed"):
+        store.add_interacted_user(name, session_id="old", followed=True)
+        store.interacted_users[name]["last_interaction"] = store.interacted_users["ana"]["last_interaction"]
+
+    device = SimpleNamespace(back=lambda: None)
+    plugin.unfollow_from_list(device, 10, lambda: None, store, "me", "unfollow")
+
+    assert len(opened) == m.MAX_FAILURES_IN_A_ROW
+    assert plugin.state.is_job_completed
+
+
 # --- do_unfollow: only checks "follows you" when the mode needs it ------------------
 
 def test_any_mode_does_not_check_followers(monkeypatch):

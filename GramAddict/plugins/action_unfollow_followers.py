@@ -32,6 +32,7 @@ UNFOLLOW_REGEX = "^Unfollow"
 NOT_FOLLOWING_REGEX = "(?i)^(Follow|Follow Back)$"
 # Deleted, banned or renamed accounts: nothing left to unfollow.
 UNAVAILABLE_REGEX = "(?i).*(isn.t available|not available|user not found).*"
+MAX_FAILURES_IN_A_ROW = 3
 
 
 class UnfollowResult(Enum):
@@ -281,7 +282,15 @@ class ActionUnfollowFollowers(Plugin):
                 return "loaded"
             if unavailable.exists(Timeout.TINY):
                 return "unavailable"
+        # IG 300 opens a deleted/renamed account's link as a blank page with only
+        # the username as title (no "isn't available" text).
+        # ponytail: a profile still blank after ~27s on a very slow network looks
+        # the same; add a known-good control profile check if that ever happens.
+        title = device.find(resourceId=self.ResourceID.ACTION_BAR_TITLE, text=username)
+        if title.exists(Timeout.TINY):
+            return "unavailable"
         logger.warning(f"@{username}'s profile didn't load.")
+        save_crash(device)
         return "failed"
 
     def do_unfollow_from_profile(self, device) -> "UnfollowResult":
@@ -369,7 +378,16 @@ class ActionUnfollowFollowers(Plugin):
             extra={"color": f"{Fore.CYAN}"},
         )
 
+        failures_in_a_row = 0
         for username in unfollow_list:
+            if failures_in_a_row >= MAX_FAILURES_IN_A_ROW:
+                # The screen isn't what we expect (IG changed?): stop instead of
+                # burning the whole list. Nothing recorded, so all are retried.
+                logger.error(
+                    f"{failures_in_a_row} unfollows failed in a row. Stopping the unfollow job."
+                )
+                self.state.is_job_completed = True
+                return
             if self.session_state.check_limit(
                 limit_type=self.session_state.Limit.UNFOLLOWS, output=False
             ):
@@ -389,6 +407,7 @@ class ActionUnfollowFollowers(Plugin):
                 result = self.do_unfollow_from_profile(device)
             else:
                 result = UnfollowResult.FAILED
+            failures_in_a_row = failures_in_a_row + 1 if result == UnfollowResult.FAILED else 0
             if result == UnfollowResult.UNFOLLOWED:
                 logger.info(
                     f"Unfollowed @{username}.",
