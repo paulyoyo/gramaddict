@@ -4,7 +4,7 @@ from random import seed
 from colorama import Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_posts
+from GramAddict.core.sources import PostsHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.source_context import build_source_context
 from GramAddict.core.utils import sample_sources
@@ -103,4 +103,4 @@ class InteractPlacePosts(Plugin):
                 break
 
     def handle_place(self, ctx):
-        handle_posts(ctx)
+        PostsHandler(ctx).run()

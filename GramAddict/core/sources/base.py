@@ -1,6 +1,7 @@
 """Steps every source handler shares: the per-user blacklist and
 already-interacted checks, and the interact() call. They used to be copied
 into each handler in handle_sources."""
+
 import logging
 from functools import partial
 from typing import Optional
@@ -44,9 +45,11 @@ class SourceHandler:
         target = ctx.source if target is None else target
         can_follow = False
         if ctx.is_follow_limit_reached is not None:
-            can_follow = not ctx.is_follow_limit_reached() and storage.get_following_status(
-                username
-            ) in [FollowingStatus.NONE, FollowingStatus.NOT_IN_LIST]
+            can_follow = (
+                not ctx.is_follow_limit_reached()
+                and storage.get_following_status(username)
+                in [FollowingStatus.NONE, FollowingStatus.NOT_IN_LIST]
+            )
 
         greeting_sink = {}
         (

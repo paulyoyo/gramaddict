@@ -65,7 +65,7 @@ class TestPluginURLTypeCheck:
         """Create a plugin instance for testing."""
         with patch.dict('sys.modules', {
             'GramAddict.core.decorators': MagicMock(),
-            'GramAddict.core.handle_sources': MagicMock(),
+            'GramAddict.core.sources': MagicMock(),
             'GramAddict.core.interaction': MagicMock(),
         }):
             from GramAddict.plugins.interact_post_likers_commenters_from_urls import (
@@ -127,7 +127,7 @@ class TestPluginArguments:
         """Create a plugin instance for testing."""
         with patch.dict('sys.modules', {
             'GramAddict.core.decorators': MagicMock(),
-            'GramAddict.core.handle_sources': MagicMock(),
+            'GramAddict.core.sources': MagicMock(),
             'GramAddict.core.interaction': MagicMock(),
         }):
             from GramAddict.plugins.interact_post_likers_commenters_from_urls import (
@@ -231,7 +231,7 @@ class TestPluginDescription:
         """Create a plugin instance for testing."""
         with patch.dict('sys.modules', {
             'GramAddict.core.decorators': MagicMock(),
-            'GramAddict.core.handle_sources': MagicMock(),
+            'GramAddict.core.sources': MagicMock(),
             'GramAddict.core.interaction': MagicMock(),
         }):
             from GramAddict.plugins.interact_post_likers_commenters_from_urls import (
@@ -269,16 +269,16 @@ class TestViewsCommentMethods:
 
 
 class TestHandleSourcesFunctions:
-    """Tests for new handle_sources functions."""
+    """Tests for the post-URL source handlers."""
 
     def test_handle_likers_from_post_exists(self):
         """Test that handle_likers_from_post function exists."""
-        from GramAddict.core.handle_sources import handle_likers_from_post
+        from GramAddict.core.sources import PostLikersHandler
         
-        assert callable(handle_likers_from_post)
+        assert callable(PostLikersHandler.run)
 
     def test_handle_commenters_exists(self):
         """Test that handle_commenters function exists."""
-        from GramAddict.core.handle_sources import handle_commenters
+        from GramAddict.core.sources import CommentersHandler
         
-        assert callable(handle_commenters)
+        assert callable(CommentersHandler.run)

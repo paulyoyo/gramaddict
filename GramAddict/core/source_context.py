@@ -1,7 +1,7 @@
 """Everything a source handler needs for one source, built once per source.
 
 Replaces the interact_with_user / follow-limit setup that every interact_* plugin
-used to copy before calling a handler in handle_sources.
+used to copy before calling a source handler.
 """
 from dataclasses import dataclass
 from functools import partial

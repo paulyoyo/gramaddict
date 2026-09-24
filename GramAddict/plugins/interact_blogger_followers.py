@@ -4,7 +4,7 @@ from random import seed
 from colorama import Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_followers
+from GramAddict.core.sources import FollowersHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.resources import ResourceID as resources
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
@@ -117,4 +117,4 @@ class InteractBloggerFollowers_Following(Plugin):
             skipped_list_limit=skipped_list_limit,
             skipped_fling_limit=skipped_fling_limit,
         )
-        handle_followers(ctx, posts_end_detector)
+        FollowersHandler(ctx).run(posts_end_detector)

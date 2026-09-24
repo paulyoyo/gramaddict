@@ -5,7 +5,7 @@ from random import seed
 from colorama import Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_posts
+from GramAddict.core.sources import PostsHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.source_context import build_source_context
 
@@ -83,4 +83,4 @@ class InteractOwnFeed(Plugin):
 
     def handle_feed(self, ctx):
         # own feed has no per-source follow limit
-        handle_posts(replace(ctx, is_follow_limit_reached=None))
+        PostsHandler(replace(ctx, is_follow_limit_reached=None)).run()

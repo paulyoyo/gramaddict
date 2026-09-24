@@ -5,7 +5,7 @@ import emoji
 from colorama.ansi import Fore
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_posts
+from GramAddict.core.sources import PostsHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.source_context import build_source_context
 from GramAddict.core.utils import sample_sources
@@ -110,4 +110,4 @@ class InteractHashtagPosts(Plugin):
                 break
 
     def handle_hashtag(self, ctx):
-        handle_posts(ctx)
+        PostsHandler(ctx).run()

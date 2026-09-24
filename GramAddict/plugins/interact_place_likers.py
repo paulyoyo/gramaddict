@@ -4,7 +4,7 @@ from random import seed
 from colorama import Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_likers
+from GramAddict.core.sources import LikersHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
 from GramAddict.core.source_context import build_source_context
@@ -114,4 +114,4 @@ class InteractPlaceLikers(Plugin):
             skipped_fling_limit=skipped_fling_limit,
         )
 
-        handle_likers(ctx, posts_end_detector)
+        LikersHandler(ctx).run(posts_end_detector)

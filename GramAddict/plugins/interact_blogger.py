@@ -4,7 +4,7 @@ from random import seed
 from colorama import Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_blogger, handle_blogger_from_file
+from GramAddict.core.sources import BloggerFromFileHandler, BloggerHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.source_context import build_source_context
 from GramAddict.core.utils import sample_sources
@@ -117,7 +117,7 @@ class InteractBloggerPostLikers(Plugin):
                 break
 
     def handle_blogger(self, ctx):
-        handle_blogger(ctx)
+        BloggerHandler(ctx).run()
 
     def handle_blogger_from_file(self, ctx):
-        handle_blogger_from_file(ctx)
+        BloggerFromFileHandler(ctx).run()

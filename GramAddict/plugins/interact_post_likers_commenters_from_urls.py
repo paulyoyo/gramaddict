@@ -7,7 +7,7 @@ from random import seed, shuffle
 from colorama import Fore, Style
 
 from GramAddict.core.decorators import run_safely
-from GramAddict.core.handle_sources import handle_likers_from_post, handle_commenters
+from GramAddict.core.sources import CommentersHandler, PostLikersHandler
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
 from GramAddict.core.source_context import build_source_context, follow_limit_checker
@@ -255,7 +255,7 @@ class InteractPostLikersCommentersFromURLs(Plugin):
             skipped_fling_limit=skipped_fling_limit,
         )
 
-        handle_likers_from_post(ctx, likers_end_detector, likers_limit)
+        PostLikersHandler(ctx).run(likers_end_detector, likers_limit)
 
     def _interact_with_commenters(self, ctx, skipped_list_limit, skipped_fling_limit):
         commenters_limit = get_value(self.args.commenters_limit_per_post, None, 10)
@@ -267,4 +267,4 @@ class InteractPostLikersCommentersFromURLs(Plugin):
 
         logger.info("Looking for commenters...", extra={"color": f"{Fore.GREEN}"})
 
-        handle_commenters(ctx, commenters_end_detector, commenters_limit)
+        CommentersHandler(ctx).run(commenters_end_detector, commenters_limit)

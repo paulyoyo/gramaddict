@@ -1,12 +1,12 @@
-"""Every interact plugin hands its SourceContext to handle_sources with the
-right arguments (batch 7b). The real handlers need a phone, so they are
-replaced by recorders that check the call against the real signature."""
+"""Every interact plugin hands its SourceContext to the right source handler
+with the right arguments (batches 7b/7c). The real handlers need a phone, so
+they are replaced by recorders that check the call against the real run()."""
 import inspect
 from types import SimpleNamespace
 
 import pytest
 
-from GramAddict.core import handle_sources, utils
+from GramAddict.core import sources, utils
 from GramAddict.core.source_context import Percentages, SourceContext
 from GramAddict.core.scroll_end_detector import ScrollEndDetector
 
@@ -39,14 +39,20 @@ def _utils_args(monkeypatch):
 
 
 def _record(monkeypatch, module, name):
+    """Replace handler class `name` in the plugin module; each call is
+    recorded as (ctx, *run_args)."""
     calls = []
-    real = getattr(handle_sources, name)
+    real = getattr(sources, name)
 
-    def recorder(*args, **kwargs):
-        inspect.signature(real).bind(*args, **kwargs)  # raises on a wrong call
-        calls.append(args)
+    class Recorder:
+        def __init__(self, ctx):
+            self.ctx = ctx
 
-    monkeypatch.setattr(module, name, recorder)
+        def run(self, *args, **kwargs):
+            inspect.signature(real.run).bind(self, *args, **kwargs)  # raises on a wrong call
+            calls.append((self.ctx,) + args)
+
+    monkeypatch.setattr(module, name, Recorder)
     return calls
 
 
@@ -59,14 +65,14 @@ def _plugin(module, cls_name):
 @pytest.mark.parametrize(
     "module_name, cls_name, method, handler, detector",
     [
-        ("interact_blogger_followers", "InteractBloggerFollowers_Following", "handle_blogger", "handle_followers", True),
-        ("interact_blogger_post_likers", "InteractBloggerPostLikers", "handle_blogger", "handle_likers", True),
-        ("interact_hashtag_likers", "InteractHashtagLikers", "handle_hashtag", "handle_likers", True),
-        ("interact_place_likers", "InteractPlaceLikers", "handle_place", "handle_likers", True),
-        ("interact_hashtag_posts", "InteractHashtagPosts", "handle_hashtag", "handle_posts", False),
-        ("interact_place_posts", "InteractPlacePosts", "handle_place", "handle_posts", False),
-        ("interact_blogger", "InteractBloggerPostLikers", "handle_blogger", "handle_blogger", False),
-        ("interact_blogger", "InteractBloggerPostLikers", "handle_blogger_from_file", "handle_blogger_from_file", False),
+        ("interact_blogger_followers", "InteractBloggerFollowers_Following", "handle_blogger", "FollowersHandler", True),
+        ("interact_blogger_post_likers", "InteractBloggerPostLikers", "handle_blogger", "LikersHandler", True),
+        ("interact_hashtag_likers", "InteractHashtagLikers", "handle_hashtag", "LikersHandler", True),
+        ("interact_place_likers", "InteractPlaceLikers", "handle_place", "LikersHandler", True),
+        ("interact_hashtag_posts", "InteractHashtagPosts", "handle_hashtag", "PostsHandler", False),
+        ("interact_place_posts", "InteractPlacePosts", "handle_place", "PostsHandler", False),
+        ("interact_blogger", "InteractBloggerPostLikers", "handle_blogger", "BloggerHandler", False),
+        ("interact_blogger", "InteractBloggerPostLikers", "handle_blogger_from_file", "BloggerFromFileHandler", False),
     ],
 )
 def test_plugin_passes_ctx(monkeypatch, module_name, cls_name, method, handler, detector):
@@ -82,7 +88,7 @@ def test_plugin_passes_ctx(monkeypatch, module_name, cls_name, method, handler, 
 def test_feed_passes_ctx_without_follow_limit(monkeypatch):
     from GramAddict.plugins import interact_feed
 
-    calls = _record(monkeypatch, interact_feed, "handle_posts")
+    calls = _record(monkeypatch, interact_feed, "PostsHandler")
     ctx = _ctx()
     _plugin(interact_feed, "InteractOwnFeed").handle_feed(ctx)
     passed = calls[0][0]
@@ -93,8 +99,8 @@ def test_feed_passes_ctx_without_follow_limit(monkeypatch):
 def test_urls_plugin_uses_the_post_as_source(monkeypatch):
     from GramAddict.plugins import interact_post_likers_commenters_from_urls as m
 
-    likers = _record(monkeypatch, m, "handle_likers_from_post")
-    commenters = _record(monkeypatch, m, "handle_commenters")
+    likers = _record(monkeypatch, m, "PostLikersHandler")
+    commenters = _record(monkeypatch, m, "CommentersHandler")
     monkeypatch.setattr(m, "open_instagram_with_url", lambda url: True)
     monkeypatch.setattr(
         m.PostsViewList, "_find_likers_container", lambda self: (True, 50)
