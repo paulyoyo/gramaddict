@@ -1,6 +1,5 @@
 import logging
 import os
-from functools import partial
 from os import path
 
 from atomicwrites import atomic_write
@@ -15,7 +14,7 @@ from GramAddict.core.navigation import (
 )
 from GramAddict.core.resources import ClassName
 from GramAddict.core.resources import ResourceID as resources
-from GramAddict.core.storage import FollowingStatus
+from GramAddict.core.sources.base import SourceHandler
 from GramAddict.core.utils import (
     get_value,
     inspect_current_view,
@@ -46,113 +45,27 @@ def load_config(config):
 logger = logging.getLogger(__name__)
 
 
-def interact(
-    storage,
-    is_follow_limit_reached,
-    username,
-    interaction,
-    device,
-    session_state,
-    current_job,
-    target,
-    on_interaction,
-):
-    can_follow = False
-    if is_follow_limit_reached is not None:
-        can_follow = not is_follow_limit_reached() and storage.get_following_status(
-            username
-        ) in [FollowingStatus.NONE, FollowingStatus.NOT_IN_LIST]
-
-    greeting_sink = {}
-    (
-        interaction_succeed,
-        followed,
-        requested,
-        scraped,
-        pm_sent,
-        number_of_liked,
-        number_of_watched,
-        number_of_comments,
-    ) = interaction(
-        device,
-        username=username,
-        can_follow=can_follow,
-        target=target,
-        current_job=current_job,
-        greeting_sink=greeting_sink,
-    )
-
-    add_interacted_user = partial(
-        storage.add_interacted_user,
-        session_id=session_state.id,
-        job_name=current_job,
-        target=target,
-    )
-
-    add_interacted_user(
-        username,
-        followed=followed,
-        is_requested=requested,
-        scraped=scraped,
-        liked=number_of_liked,
-        watched=number_of_watched,
-        commented=number_of_comments,
-        pm_sent=pm_sent,
-    )
-    # DJ greeting flow: queue the greeted user for the reply/AI conversation step.
-    if greeting_sink:
-        storage.enqueue_pending_reply(username, **greeting_sink)
-    return on_interaction(
-        succeed=interaction_succeed,
-        followed=followed,
-        scraped=scraped,
-    )
-
 
 def handle_blogger(ctx):
     device = ctx.device
     session_state = ctx.session_state
     blogger = ctx.source
-    current_job = ctx.current_job
-    storage = ctx.storage
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
+    handler = SourceHandler(ctx)
     if not nav_to_blogger(device, blogger, session_state.my_username):
         return
     can_interact = False
-    if storage.is_user_in_blacklist(blogger):
-        logger.info(f"@{blogger} is in blacklist. Skip.")
+    if handler.is_blacklisted(blogger):
+        pass  # logged
     else:
-        interacted, interacted_when = storage.check_user_was_interacted(blogger)
-        if interacted:
-            can_reinteract = storage.can_be_reinteract(
-                interacted_when, get_value(ctx.args.can_reinteract_after, None, 0)
-            )
-            logger.info(
-                f"@{blogger}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. {'Interacting again now' if can_reinteract else 'Skip'}."
-            )
-            if can_reinteract:
-                can_interact = True
-        else:
-            can_interact = True
+        # None = never interacted; False = interacted too recently
+        can_interact = handler.may_interact_again(blogger) is not False
 
     if can_interact:
         logger.info(
             f"@{blogger}: interact",
             extra={"color": f"{Fore.YELLOW}"},
         )
-        if not interact(
-            storage=storage,
-            is_follow_limit_reached=is_follow_limit_reached,
-            username=blogger,
-            interaction=interaction,
-            device=device,
-            session_state=session_state,
-            current_job=current_job,
-            target=blogger,
-            on_interaction=on_interaction,
-        ):
+        if not handler.interact_with(blogger):
             return
 
 
@@ -161,9 +74,7 @@ def handle_blogger_from_file(ctx):
     parameter_passed = ctx.source
     current_job = ctx.current_job
     storage = ctx.storage
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
+    handler = SourceHandler(ctx)
     need_to_refresh = True
     on_following_list = False
     limit_reached = False
@@ -216,25 +127,11 @@ def handle_blogger_from_file(ctx):
                         )
                         break
                 else:
-                    if storage.is_user_in_blacklist(username):
-                        logger.info(f"@{username} is in blacklist. Skip.")
+                    if handler.is_blacklisted(username):
+                        pass  # logged
                     else:
-                        (
-                            interacted,
-                            interacted_when,
-                        ) = storage.check_user_was_interacted(username)
-                        if interacted:
-                            can_reinteract = storage.can_be_reinteract(
-                                interacted_when,
-                                get_value(ctx.args.can_reinteract_after, None, 0),
-                            )
-                            logger.info(
-                                f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. {'Interacting again now' if can_reinteract else 'Skip'}."
-                            )
-                            if can_reinteract:
-                                can_interact = True
-                        else:
-                            can_interact = True
+                        # None = never interacted; False = interacted too recently
+                        can_interact = handler.may_interact_again(username) is not False
 
                     if not can_interact:
                         continue
@@ -246,17 +143,7 @@ def handle_blogger_from_file(ctx):
                         not_found.append(username_raw)
                         continue
 
-                    if not interact(
-                        storage=storage,
-                        is_follow_limit_reached=is_follow_limit_reached,
-                        username=username,
-                        interaction=interaction,
-                        device=device,
-                        session_state=ctx.session_state,
-                        current_job=current_job,
-                        target=username,
-                        on_interaction=on_interaction,
-                    ):
+                    if not handler.interact_with(username, target=username):
                         return
                     device.back()
                     processed_users += 1
@@ -305,11 +192,8 @@ def handle_likers(ctx, posts_end_detector):
     session_state = ctx.session_state
     target = ctx.source
     current_job = ctx.current_job
-    storage = ctx.storage
     profile_filter = ctx.profile_filter
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
+    handler = SourceHandler(ctx)
     if (
         current_job == "blogger-post-likers"
         and not nav_to_post_likers(device, target, session_state.my_username)
@@ -381,25 +265,11 @@ def handle_likers(ctx, posts_end_detector):
                     screen_iterated_likers.append(username)
                     posts_end_detector.notify_username_iterated(username)
                     can_interact = False
-                    if storage.is_user_in_blacklist(username):
-                        logger.info(f"@{username} is in blacklist. Skip.")
+                    if handler.is_blacklisted(username):
+                        pass  # logged
                     else:
-                        (
-                            interacted,
-                            interacted_when,
-                        ) = storage.check_user_was_interacted(username)
-                        if interacted:
-                            can_reinteract = storage.can_be_reinteract(
-                                interacted_when,
-                                get_value(ctx.args.can_reinteract_after, None, 0),
-                            )
-                            logger.info(
-                                f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. {'Interacting again now' if can_reinteract else 'Skip'}."
-                            )
-                            if can_reinteract:
-                                can_interact = True
-                        else:
-                            can_interact = True
+                        # None = never interacted; False = interacted too recently
+                        can_interact = handler.may_interact_again(username) is not False
 
                     if can_interact:
                         logger.info(
@@ -408,17 +278,7 @@ def handle_likers(ctx, posts_end_detector):
                         )
                         element_opened = username_view.click_retry()
 
-                        if element_opened and not interact(
-                            storage=storage,
-                            is_follow_limit_reached=is_follow_limit_reached,
-                            username=username,
-                            interaction=interaction,
-                            device=device,
-                            session_state=session_state,
-                            current_job=current_job,
-                            target=target,
-                            on_interaction=on_interaction,
-                        ):
+                        if element_opened and not handler.interact_with(username):
                             return
                     if element_opened:
                         opened = True
@@ -484,13 +344,10 @@ def handle_posts(ctx):
     session_state = ctx.session_state
     target = ctx.source
     current_job = ctx.current_job
-    storage = ctx.storage
     profile_filter = ctx.profile_filter
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
     interact_percentage = ctx.percentages.interact
     scraping_file = ctx.args.scrape_to_file
+    handler = SourceHandler(ctx)
     skipped_posts_limit = get_value(
         ctx.args.skipped_posts_limit,
         "Skipped post limit: {}",
@@ -558,8 +415,8 @@ def handle_posts(ctx):
                 already_liked_count += 1
             elif random_choice(interact_percentage):
                 can_interact = False
-                if storage.is_user_in_blacklist(username):
-                    logger.info(f"@{username} is in blacklist. Skip.")
+                if handler.is_blacklisted(username):
+                    pass  # logged
                 elif profile_filter is not None and profile_filter.is_handler_blacklisted(username):
                     pass  # Skip due to handler blacklist (message logged in filter function)
                 else:
@@ -567,22 +424,12 @@ def handle_posts(ctx):
                         number_of_likers
                     )
                     if current_job != "feed":
-                        interacted, interacted_when = storage.check_user_was_interacted(
-                            username
-                        )
-                        if interacted:
-                            can_reinteract = storage.can_be_reinteract(
-                                interacted_when,
-                                get_value(ctx.args.can_reinteract_after, None, 0),
-                            )
-                            logger.info(
-                                f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. {'Interacting again now' if can_reinteract else 'Skip'}."
-                            )
-                            if can_reinteract:
-                                can_interact = True
-                                nr_consecutive_already_interacted = 0
-                            else:
-                                nr_consecutive_already_interacted += 1
+                        again = handler.may_interact_again(username)
+                        if again:
+                            can_interact = True
+                            nr_consecutive_already_interacted = 0
+                        elif again is False:
+                            nr_consecutive_already_interacted += 1
                         else:
                             can_interact = True
                             nr_consecutive_already_interacted = 0
@@ -646,17 +493,7 @@ def handle_posts(ctx):
                             current_job, Owner.OPEN, username
                         )
                         if opened:
-                            if not interact(
-                                storage=storage,
-                                is_follow_limit_reached=is_follow_limit_reached,
-                                username=username,
-                                interaction=interaction,
-                                device=device,
-                                session_state=session_state,
-                                current_job=current_job,
-                                target=target,
-                                on_interaction=on_interaction,
-                            ):
+                            if not handler.interact_with(username):
                                 break
                             device.back()
             else:
@@ -685,14 +522,11 @@ def handle_followers(ctx, scroll_end_detector):
 
 def iterate_over_followers(ctx, is_myself, scroll_end_detector):
     device = ctx.device
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
     storage = ctx.storage
-    on_interaction = ctx.on_interaction
-    session_state = ctx.session_state
     current_job = ctx.current_job
     target = ctx.source
     profile_filter = ctx.profile_filter
+    handler = SourceHandler(ctx)
     device.find(
         resourceId=ctx.resource_id.FOLLOW_LIST_CONTAINER,
         className=ClassName.LINEAR_LAYOUT,
@@ -757,26 +591,16 @@ def iterate_over_followers(ctx, is_myself, scroll_end_detector):
                 scroll_end_detector.notify_username_iterated(username)
 
                 can_interact = False
-                if storage.is_user_in_blacklist(username):
-                    logger.info(f"@{username} is in blacklist. Skip.")
+                if handler.is_blacklisted(username):
+                    pass  # logged
                 elif profile_filter is not None and profile_filter.is_handler_blacklisted(username):
                     pass  # Skip due to handler blacklist (message logged in filter function)
                 else:
-                    interacted, interacted_when = storage.check_user_was_interacted(
-                        username
-                    )
-                    if interacted:
-                        can_reinteract = storage.can_be_reinteract(
-                            interacted_when,
-                            get_value(ctx.args.can_reinteract_after, None, 0),
-                        )
-                        logger.info(
-                            f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. {'Interacting again now' if can_reinteract else 'Skip'}."
-                        )
-                        if can_reinteract:
-                            can_interact = True
-                        else:
-                            screen_skipped_followers_count += 1
+                    again = handler.may_interact_again(username)
+                    if again:
+                        can_interact = True
+                    elif again is False:
+                        screen_skipped_followers_count += 1
                     else:
                         can_interact = True
 
@@ -790,17 +614,7 @@ def iterate_over_followers(ctx, is_myself, scroll_end_detector):
                     element_opened = user_name_view.click_retry()
 
                     if element_opened:
-                        if not interact(
-                            storage=storage,
-                            is_follow_limit_reached=is_follow_limit_reached,
-                            username=username,
-                            interaction=interaction,
-                            device=device,
-                            session_state=session_state,
-                            current_job=current_job,
-                            target=target,
-                            on_interaction=on_interaction,
-                        ):
+                        if not handler.interact_with(username):
                             return
                     if element_opened:
                         logger.info("Back to followers list")
@@ -897,12 +711,7 @@ def handle_likers_from_post(ctx, likers_end_detector, likers_limit):
     """Iterate over likers of a post from URL and interact with them."""
     device = ctx.device
     session_state = ctx.session_state
-    target_url = ctx.source
-    current_job = ctx.current_job
-    storage = ctx.storage
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
+    handler = SourceHandler(ctx)
     PostsViewList(device).open_likers_container()
 
     likes_list_view = OpenedPostView(device)._getListViewLikers()
@@ -952,27 +761,13 @@ def handle_likers_from_post(ctx, likers_end_detector, likers_limit):
                 likers_end_detector.notify_username_iterated(username)
 
                 can_interact = False
-                if storage.is_user_in_blacklist(username):
-                    logger.info(f"@{username} is in blacklist. Skip.")
+                if handler.is_blacklisted(username):
+                    pass  # logged
                 elif username == session_state.my_username:
                     logger.info("It's you, skip.")
                 else:
-                    interacted, interacted_when = storage.check_user_was_interacted(
-                        username
-                    )
-                    if interacted:
-                        can_reinteract = storage.can_be_reinteract(
-                            interacted_when,
-                            get_value(ctx.args.can_reinteract_after, None, 0),
-                        )
-                        logger.info(
-                            f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. "
-                            f"{'Interacting again now' if can_reinteract else 'Skip'}."
-                        )
-                        if can_reinteract:
-                            can_interact = True
-                    else:
-                        can_interact = True
+                    # None = never interacted; False = interacted too recently
+                    can_interact = handler.may_interact_again(username) is not False
 
                 if can_interact:
                     logger.info(
@@ -981,17 +776,7 @@ def handle_likers_from_post(ctx, likers_end_detector, likers_limit):
                     )
                     element_opened = username_view.click_retry()
 
-                    if element_opened and not interact(
-                        storage=storage,
-                        is_follow_limit_reached=is_follow_limit_reached,
-                        username=username,
-                        interaction=interaction,
-                        device=device,
-                        session_state=session_state,
-                        current_job=current_job,
-                        target=target_url,
-                        on_interaction=on_interaction,
-                    ):
+                    if element_opened and not handler.interact_with(username):
                         device.back()
                         return
 
@@ -1053,12 +838,7 @@ def handle_commenters(ctx, comments_end_detector, commenters_limit):
     """Iterate over commenters of a post and interact with them."""
     device = ctx.device
     session_state = ctx.session_state
-    target_url = ctx.source
-    current_job = ctx.current_job
-    storage = ctx.storage
-    on_interaction = ctx.on_interaction
-    interaction = ctx.interaction
-    is_follow_limit_reached = ctx.is_follow_limit_reached
+    handler = SourceHandler(ctx)
     opened_post_view = OpenedPostView(device)
 
     if not opened_post_view.open_comments_section():
@@ -1113,27 +893,13 @@ def handle_commenters(ctx, comments_end_detector, commenters_limit):
                 comments_end_detector.notify_username_iterated(username)
 
                 can_interact = False
-                if storage.is_user_in_blacklist(username):
-                    logger.info(f"@{username} is in blacklist. Skip.")
+                if handler.is_blacklisted(username):
+                    pass  # logged
                 elif username == session_state.my_username:
                     logger.info("It's you, skip.")
                 else:
-                    interacted, interacted_when = storage.check_user_was_interacted(
-                        username
-                    )
-                    if interacted:
-                        can_reinteract = storage.can_be_reinteract(
-                            interacted_when,
-                            get_value(ctx.args.can_reinteract_after, None, 0),
-                        )
-                        logger.info(
-                            f"@{username}: already interacted on {interacted_when:%Y/%m/%d %H:%M:%S}. "
-                            f"{'Interacting again now' if can_reinteract else 'Skip'}."
-                        )
-                        if can_reinteract:
-                            can_interact = True
-                    else:
-                        can_interact = True
+                    # None = never interacted; False = interacted too recently
+                    can_interact = handler.may_interact_again(username) is not False
 
                 if can_interact:
                     logger.info(
@@ -1145,17 +911,7 @@ def handle_commenters(ctx, comments_end_detector, commenters_limit):
                     if username_view is not None:
                         element_opened = username_view.click_retry()
 
-                    if element_opened and not interact(
-                        storage=storage,
-                        is_follow_limit_reached=is_follow_limit_reached,
-                        username=username,
-                        interaction=interaction,
-                        device=device,
-                        session_state=session_state,
-                        current_job=current_job,
-                        target=target_url,
-                        on_interaction=on_interaction,
-                    ):
+                    if element_opened and not handler.interact_with(username):
                         device.back()
                         return
 
