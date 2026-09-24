@@ -176,8 +176,9 @@ class CommentersHandler(SourceHandler):
             )
             if post_owner_view.exists():
                 post_owner = post_owner_view.get_text().strip().split()[0]
-        except Exception:
-            pass
+        except Exception as e:
+            # only used to skip the post owner among commenters
+            logger.debug(f"Could not read the post owner: {type(e).__name__}: {e}")
 
         while commenters_interacted < commenters_limit:
             logger.info("Iterate over visible commenters.")

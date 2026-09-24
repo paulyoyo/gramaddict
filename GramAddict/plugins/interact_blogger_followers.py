@@ -76,7 +76,7 @@ class InteractBloggerFollowers_Following(Plugin):
             limit_reached = active_limits_reached or actions_limit_reached
 
             self.state = State()
-            is_myself = source[1:] == self.session_state.my_username
+            is_myself = source.lstrip("@") == self.session_state.my_username
             its_you = is_myself and " (it's you)" or ""
             logger.info(
                 f"Handle {source} {its_you}", extra={"color": f"{Style.BRIGHT}"}

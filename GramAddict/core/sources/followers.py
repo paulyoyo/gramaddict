@@ -27,7 +27,7 @@ class FollowersHandler(SourceHandler):
         session_state = self.ctx.session_state
         username = self.ctx.source
         current_job = self.ctx.current_job
-        is_myself = username == session_state.my_username
+        is_myself = username.lstrip("@") == session_state.my_username
         if not nav_to_blogger(device, username, current_job):
             return
 

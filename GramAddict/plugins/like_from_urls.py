@@ -93,6 +93,9 @@ class LikeFromURLs(Plugin):
                                 media_type,
                                 obj_count,
                             ) = post_view_list.detect_media_type(content_desc)
+                            # Unknown media type or a video that doesn't open: no like,
+                            # instead of a NameError that stops the whole bot.
+                            like_succeed = False
                             if media_type in (
                                 MediaType.REEL,
                                 MediaType.IGTV,

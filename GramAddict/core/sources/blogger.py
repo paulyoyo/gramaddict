@@ -41,9 +41,8 @@ class BloggerHandler(SourceHandler):
 
     def run(self):
         device = self.ctx.device
-        session_state = self.ctx.session_state
         blogger = self.ctx.source
-        if not nav_to_blogger(device, blogger, session_state.my_username):
+        if not nav_to_blogger(device, blogger, self.ctx.current_job):
             return
         can_interact = False
         if self.is_blacklisted(blogger):
@@ -94,6 +93,7 @@ class BloggerFromFileHandler(SourceHandler):
             )
             not_found = []
             processed_users = 0
+            crashed = False
             try:
                 for line, username_raw in enumerate(usernames, start=1):
                     username = username_raw.strip()
@@ -152,6 +152,9 @@ class BloggerFromFileHandler(SourceHandler):
                                 f"{processed_users} users have been interracted, going to the next job."
                             )
                             return
+            except BaseException:
+                crashed = True
+                raise
             finally:
                 if not_found:
                     with open(
@@ -162,7 +165,8 @@ class BloggerFromFileHandler(SourceHandler):
                         f.writelines(not_found)
                 if self.ctx.args.delete_interacted_users and len_usernames != 0:
                     with atomic_write(filename, overwrite=True, encoding="utf-8") as f:
-                        f.writelines(usernames[line:])
+                        # after a crash, keep the user who was being handled
+                        f.writelines(usernames[line - 1 if crashed else line :])
         else:
             logger.warning(
                 f"File {filename} not found. You have to specify the right relative path from this point: {os.getcwd()}"

@@ -87,7 +87,9 @@ class InteractBloggerPostLikers(Plugin):
                 self, device, storage, profile_filter, plugin, source
             )
 
-            @run_safely(
+            # Both jobs recover from app crashes; job_file used to be unwrapped,
+            # so a crash in interact-from-file / unfollow-from-file stopped the bot.
+            safely = run_safely(
                 device=device,
                 device_id=self.device_id,
                 sessions=self.sessions,
@@ -95,10 +97,13 @@ class InteractBloggerPostLikers(Plugin):
                 screen_record=self.args.screen_record,
                 configs=configs,
             )
+
+            @safely
             def job():
                 self.handle_blogger(ctx)
                 self.state.is_job_completed = True
 
+            @safely
             def job_file():
                 self.handle_blogger_from_file(ctx)
                 self.state.is_job_completed = True
