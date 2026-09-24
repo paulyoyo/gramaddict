@@ -123,3 +123,53 @@ def test_unreachable_user_is_dropped_after_three_visits():
     assert store.entries and entry["unreachable"] == 2
     plugin._count_unreachable(store, entry)
     assert store.entries == []
+
+
+# Same structure as a real IG v300 DM inbox dump, with made-up people.
+INBOX_XML = """<hierarchy><node resource-id="com.instagram.android:id/inbox_refreshable_thread_list_recyclerview">
+  <node resource-id="com.instagram.android:id/row_inbox_container" content-desc="Ana Perez, unread, 3 new messages ·, 29 minutes ago">
+    <node resource-id="com.instagram.android:id/avatar_container" content-desc="Open story of anap.99"/>
+    <node resource-id="com.instagram.android:id/row_inbox_username" text="Ana Perez" content-desc="Ana Perez"/>
+  </node>
+  <node resource-id="com.instagram.android:id/row_inbox_container" content-desc="Luis Soto, Sent 32m ago">
+    <node resource-id="com.instagram.android:id/row_inbox_username" text="Luis Soto" content-desc="Luis Soto"/>
+  </node>
+  <node resource-id="com.instagram.android:id/row_inbox_container" content-desc="CALAMAR, unread, A Mia jaja ·, 40 minutes ago">
+    <node resource-id="com.instagram.android:id/row_inbox_username" text="CALAMAR" content-desc="CALAMAR"/>
+  </node>
+  <node resource-id="com.instagram.android:id/row_inbox_container" content-desc="mr.dj_22, unread, 2 new messages ·, 42 minutes ago">
+    <node resource-id="com.instagram.android:id/row_inbox_username" text="mr.dj_22" content-desc="mr.dj_22"/>
+  </node>
+</node></hierarchy>"""
+
+
+def test_unread_inbox_rows_reads_only_unread_threads():
+    from GramAddict.plugins.action_reply_dms import unread_inbox_rows
+
+    assert unread_inbox_rows(INBOX_XML) == [
+        ("Ana Perez", "anap.99"),
+        ("CALAMAR", None),
+        ("mr.dj_22", None),
+    ]
+
+
+def test_replied_first_matches_by_username_story_full_or_first_name():
+    from GramAddict.plugins.action_reply_dms import replied_first, unread_inbox_rows
+
+    queue = [
+        {"username": "anap.99", "first_name": "Ana"},  # story username
+        {"username": "mr.dj_22"},  # row shows the username
+        {"username": "calamar_x", "full_name": "CALAMAR"},  # full name
+        {"username": "luis.s", "first_name": "Luis"},  # read thread: not a hit
+        {"username": "zzz", "first_name": "Zoe"},
+    ]
+    hits, rest = replied_first(queue, unread_inbox_rows(INBOX_XML))
+    assert [e["username"] for e in hits] == ["anap.99", "mr.dj_22", "calamar_x"]
+    assert [e["username"] for e in rest] == ["luis.s", "zzz"]
+
+
+def test_replied_first_with_empty_inbox_keeps_everyone_in_rest():
+    from GramAddict.plugins.action_reply_dms import replied_first
+
+    queue = [{"username": "a"}, {"username": "b"}]
+    assert replied_first(queue, []) == ([], queue)

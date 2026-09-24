@@ -36,6 +36,10 @@ class ResourceID:
         self.DIRECT_TEXT_MESSAGE_TEXT_VIEW = (
             f"{APP_ID}:id/direct_text_message_text_view"
         )
+        self.ACTION_BAR_INBOX_BUTTON = f"{APP_ID}:id/action_bar_inbox_button"
+        self.INBOX_THREAD_LIST = (
+            f"{APP_ID}:id/inbox_refreshable_thread_list_recyclerview"
+        )
         self.ECHO_TEXT = f"{APP_ID}:id/echo_text"
         self.FEED_INLINE_COMPOSER_BUTTON_TEXTVIEW = (
             f"{APP_ID}:id/feed_inline_composer_button_textview"

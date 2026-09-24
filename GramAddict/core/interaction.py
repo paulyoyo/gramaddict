@@ -149,6 +149,7 @@ def interact_with_user(
                 current_job,
             )
             if sent_pm:
+                _remember_full_name(greeting_sink, profile_data)
                 interacted = True
                 if is_ella and storage_instance:
                     storage_instance.mark_ella_target(username)
@@ -382,6 +383,7 @@ def interact_with_user(
         )
         swipe_amount = 0
         if sent_pm:
+            _remember_full_name(greeting_sink, profile_data)
             interacted = True
             if is_ella and storage_instance:
                 storage_instance.mark_ella_target(username)
@@ -755,6 +757,13 @@ def build_greeting(config: dict, first_name: str, source: Optional[str]) -> str:
     mix_q = config.get("mix-question") or "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
     parts.append(mix_q.strip())
     return " ".join(p for p in parts if p)
+
+
+def _remember_full_name(greeting_sink, profile_data):
+    """The DM inbox lists people by display name, so keep it on the queued
+    greeting to spot their replies there (see action_reply_dms)."""
+    if greeting_sink and profile_data.fullname:
+        greeting_sink["full_name"] = profile_data.fullname.strip()
 
 
 def _send_pm_or_greeting(

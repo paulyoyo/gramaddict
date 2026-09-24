@@ -99,7 +99,8 @@ dj-greeting-mode: false # set to true to activate the AI DM greeting/campaign (n
 # reply-dms: true
 # reply-dms-min-hours: 3 # wait at least this many hours after the last message before checking
 # reply-dms-limit: 10 # max users to process per session (number or range, e.g. 10-15)
-# reply-dms-cooldown-hours: 20-28 # hours between reply checks; e.g. 2-4 to answer within a few hours
+# reply-dms-cooldown-hours: 20-28 # hours between reply checks; 0 = every session
+# Unread DM threads are checked first (read from the inbox list, no thread is opened).
 
 ## Special actions
 # pre-script: pre_script_path_here

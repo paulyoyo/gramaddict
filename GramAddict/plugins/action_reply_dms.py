@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from random import choice, randint, shuffle
 from time import sleep
@@ -14,7 +15,7 @@ from GramAddict.core.deepseek import (
     classify_intent,
     load_deepseek_config,
 )
-from GramAddict.core.device_facade import Mode, Timeout
+from GramAddict.core.device_facade import Direction, Mode, Timeout
 from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.resources import ClassName
 from GramAddict.core.resources import ResourceID as resources
@@ -72,6 +73,52 @@ def text_after_our_last_message(bubbles, screen_width):
             incoming.append(text)
     return " / ".join(incoming) or None
 
+
+def unread_inbox_rows(hierarchy_xml: str):
+    """Parse a DM inbox screen dump. Returns [(display_name, story_username)]
+    for unread threads; story_username is None unless the row shows a story
+    ring ("Open story of <username>"), the only place the username appears."""
+    rows = []
+    for row in ET.fromstring(hierarchy_xml).iter("node"):
+        if not row.get("resource-id", "").endswith(":id/row_inbox_container"):
+            continue
+        desc = row.get("content-desc", "")
+        name, _, rest = desc.partition(", ")
+        if not rest.startswith("unread"):
+            continue
+        story_user = None
+        for node in row.iter("node"):
+            node_desc = node.get("content-desc", "")
+            if node_desc.startswith("Open story of "):
+                story_user = node_desc[len("Open story of "):].strip()
+                break
+        rows.append((name.strip(), story_user))
+    return rows
+
+
+def replied_first(pending, unread_rows):
+    """Split the queue into (entries that look like an unread inbox thread,
+    the rest). A loose match only changes check order: each thread is still
+    opened by username and read before anything is sent."""
+    names = {name.casefold() for name, _ in unread_rows}
+    users = {user.casefold() for _, user in unread_rows if user}
+    first_words = {name.split()[0].casefold() for name, _ in unread_rows if name.split()}
+
+    def looks_unread(entry):
+        username = (entry.get("username") or "").casefold()
+        full_name = (entry.get("full_name") or "").casefold()
+        first_name = (entry.get("first_name") or "").casefold()
+        return (
+            username in users
+            or username in names
+            or (full_name and full_name in names)
+            or (first_name and first_name in first_words)
+        )
+
+    hits = [e for e in pending if looks_unread(e)]
+    return hits, [e for e in pending if not looks_unread(e)]
+
+
 # Questions posed to the DeepSeek classifier at each conversation stage.
 Q_INTERESTED = "Does this reply show the person is interested in listening to the mix?"
 Q_SOUNDCLOUD = "Does this reply say they use SoundCloud (or want the SoundCloud link)?"
@@ -120,7 +167,7 @@ class ActionReplyDMs(Plugin):
             {
                 "arg": "--reply-dms-cooldown-hours",
                 "nargs": None,
-                "help": "hours between reply checks (number or range); lower it to answer sooner",
+                "help": "hours between reply checks (number or range); 0 checks at the start of every session",
                 "metavar": "20-28",
                 "default": DEFAULT_COOLDOWN_HOURS,
             },
@@ -158,13 +205,23 @@ class ActionReplyDMs(Plugin):
         min_hours = get_value(self.args.reply_dms_min_hours, "Reply DMs min hours: {}", 3)
         limit = get_value(self.args.reply_dms_limit, "Reply DMs limit: {}", 10)
 
-        pending = [
+        queue = storage.get_pending_replies()
+        # People with an unread thread have replied: check them first, and
+        # without waiting min_hours. Everyone else in random order.
+        replied, _ = replied_first(queue, self._scan_inbox(device)) if queue else ([], [])
+        due = [
             entry
-            for entry in storage.get_pending_replies()
-            if self._hours_since(entry.get("sent_at")) >= min_hours
+            for entry in queue
+            if entry not in replied and self._hours_since(entry.get("sent_at")) >= min_hours
         ]
-        shuffle(pending)
-        pending = pending[:limit]
+        shuffle(replied)
+        shuffle(due)
+        if replied:
+            logger.info(
+                f"{len(replied)} queued user(s) have unread messages in the inbox. Checking them first.",
+                extra={"color": f"{Fore.BLUE}"},
+            )
+        pending = (replied + due)[:limit]
 
         if not pending:
             logger.info("No greeted users due for a reply check.")
@@ -224,6 +281,39 @@ class ActionReplyDMs(Plugin):
             logger.warning(f"Unknown stage {stage!r} for @{target}; dropping.")
             storage.remove_pending_reply(target)
         device.back()
+
+    def _scan_inbox(self, device, pages=8):
+        """Read-only: open the DM list, collect its unread rows, go back.
+        Listing threads doesn't mark them read, and no thread is opened here."""
+        try:
+            thread_list = device.find(resourceId=self.ResourceID.INBOX_THREAD_LIST)
+            # Already in the inbox (no tab bar there): navigating "home" would
+            # fall back to a coordinate tap that lands on a thread row.
+            if not thread_list.exists(Timeout.TINY):
+                TabBarView(device).navigateToHome()
+                inbox_button = device.find(resourceId=self.ResourceID.ACTION_BAR_INBOX_BUTTON)
+                if not inbox_button.exists(Timeout.MEDIUM):
+                    logger.info("DM inbox button not found; checking the queue in random order.")
+                    return []
+                inbox_button.click()
+            if not thread_list.exists(Timeout.LONG):
+                logger.info("DM inbox didn't load; checking the queue in random order.")
+                device.back()
+                return []
+            rows, last_dump = [], None
+            for _ in range(pages):
+                dump = device.deviceV2.dump_hierarchy()
+                if dump == last_dump:
+                    break  # end of the list
+                rows += [row for row in unread_inbox_rows(dump) if row not in rows]
+                last_dump = dump
+                thread_list.scroll(Direction.DOWN)
+            device.back()
+            logger.info(f"DM inbox: {len(rows)} unread thread(s) found.")
+            return rows
+        except Exception as e:
+            logger.warning(f"Could not read the DM inbox ({e}); checking the queue in random order.")
+            return []
 
     def _count_unreachable(self, storage, entry):
         target = entry.get("username")
