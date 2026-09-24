@@ -7,7 +7,7 @@ from colorama import Fore, Style
 
 from GramAddict import __tested_ig_version__
 from GramAddict.core.config import Config
-from GramAddict.core.device_facade import create_device, get_device_info
+from GramAddict.core.device_facade import DeviceFacade, create_device, get_device_info
 from GramAddict.core.filter import Filter
 from GramAddict.core.filter import load_config as load_filter
 from GramAddict.core.interaction import load_config as load_interaction
@@ -54,6 +54,27 @@ from GramAddict.core.utils import (
 )
 from GramAddict.core.views import AccountView, ProfileView, TabBarView, UniversalActions
 from GramAddict.core.views import load_config as load_views
+
+
+def back_to_own_profile(device, profile_view, tab_bar_view, my_username) -> bool:
+    """Make sure each job starts on your profile. False means Instagram could
+    not be reopened and the session should end (the bot keeps running).
+
+    Nothing wraps this in run_safely: an Instagram crash here (e.g. a
+    permission prompt covered it during the last job) used to exit the bot."""
+    logger = logging.getLogger(__name__)
+    try:
+        if profile_view.getUsername() != my_username:
+            logger.debug("Not in your main profile.")
+            tab_bar_view.navigateToProfile()
+        return True
+    except DeviceFacade.AppHasCrashed:
+        logger.warning("Instagram closed between jobs. Reopening it.")
+        if not open_instagram(device):
+            logger.error("Could not reopen Instagram. Ending this session.")
+            return False
+        tab_bar_view.navigateToProfile()
+        return True
 
 
 def reply_dms_first(jobs_list):
@@ -391,9 +412,10 @@ def start_bot(**kwargs):
                     extra={"color": f"{Fore.CYAN}"},
                 )
                 break
-            if profile_view.getUsername() != session_state.my_username:
-                logger.debug("Not in your main profile.")
-                tab_bar_view.navigateToProfile()
+            if not back_to_own_profile(
+                device, profile_view, tab_bar_view, session_state.my_username
+            ):
+                break
             if plugin in unfollow_jobs:
                 if configs.args.scrape_to_file is not None:
                     logger.warning(

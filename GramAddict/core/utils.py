@@ -257,6 +257,34 @@ def check_screen_timeout():
         logger.debug(resp.stdout)
 
 
+# Android's runtime-permission prompt (e.g. "Allow Instagram to access photos
+# and videos?") sits in front of Instagram and blocks it. The bot never needs
+# these permissions, so it answers "Don't allow".
+PERMISSION_CONTROLLERS = (
+    "com.google.android.permissioncontroller",
+    "com.android.permissioncontroller",
+)
+
+
+def dismiss_permission_prompt(device) -> bool:
+    """If a permission prompt is in front, deny it. Returns True if one was there."""
+    if device.deviceV2.app_current()["package"] not in PERMISSION_CONTROLLERS:
+        return False
+    prompt = device.deviceV2(resourceIdMatches=r".*:id/permission_message")
+    question = prompt.get_text() if prompt.exists(timeout=2) else "a permission"
+    deny = device.deviceV2(
+        resourceIdMatches=r".*:id/permission_deny(_and_dont_ask_again)?_button"
+    )
+    if deny.exists(timeout=3):
+        logger.warning(f"Android asked: {question} Answering \"Don't allow\".")
+        deny.click()
+    else:
+        logger.warning(f"Android asked: {question} No deny button found; pressing back.")
+        device.deviceV2.press("back")
+    sleep(2)
+    return True
+
+
 def open_instagram(device):
     nl = "\n"
     FastInputIME = "com.github.uiautomator/.FastInputIME"
@@ -285,6 +313,8 @@ def open_instagram(device):
             return False
         n += 1
         logger.info(f"Waiting for Instagram to open... 😴 ({n}/{max_tries})")
+        if dismiss_permission_prompt(device):
+            continue
         if check_if_crash_popup_is_there(device):
             logger.info("Ig crashed, try to open it again...")
         call_ig()
