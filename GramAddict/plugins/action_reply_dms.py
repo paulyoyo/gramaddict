@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 from random import choice, randint, shuffle
 from time import sleep
@@ -27,6 +28,33 @@ logger = logging.getLogger(__name__)
 # check time drifting instead of firing at a fixed clock hour.
 DEFAULT_COOLDOWN_HOURS = "20-28"
 COOLDOWN_FILE = "dm_reply_last_run.txt"
+
+# Drop a queued user after this many visits with no way to open their DM.
+MAX_UNREACHABLE = 3
+
+# Replies that clearly mean "yes" to both of our questions, so they never go to
+# DeepSeek (which read a bare "👍" as unsure). Variation selectors and skin
+# tones are ignored.
+_YES_WORDS = {
+    "si", "sí", "sii", "siii", "sip", "dale", "claro", "ok", "okay", "okey",
+    "va", "vale", "obvio", "ya", "porfa", "please", "plis", "bro", "hermano",
+    "pasa", "pasalo", "pásalo", "manda", "mandalo", "mándalo", "yes", "sure",
+}
+_YES_EMOJI = set("👍👌🙌🔥❤💯👏🤙😍🥰💪✅🎶🎧")
+
+
+def is_obvious_yes(text) -> bool:
+    words = re.findall(r"[^\W\d_]+", (text or "").lower())
+    emoji = [c for c in (text or "") if not c.isalnum() and not c.isspace()
+             and c not in "!¡?¿.,;:'\"-\ufe0f\u200d"
+             and not "\U0001F3FB" <= c <= "\U0001F3FF"]  # skin tones
+    if not words and not emoji:
+        return False
+    return all(w in _YES_WORDS for w in words) and all(e in _YES_EMOJI for e in emoji) and (
+        any(w in _YES_WORDS - {"bro", "hermano", "porfa", "please", "plis"} for w in words)
+        or bool(emoji)
+    )
+
 
 # Outgoing DM bubbles end ~2% from the right screen edge; incoming ones start
 # after the sender's avatar and end >=15% away (IG v300 dump, 720px wide).
@@ -57,14 +85,14 @@ class ActionReplyDMs(Plugin):
     """Step 2+ of the DJ DM flow: read replies from users we greeted and drive a
     short, templated conversation (YouTube link -> ask SoundCloud -> SoundCloud
     link). DeepSeek only classifies intent; the code owns all text and links.
-    Runs at most once per day."""
+    Runs at most once per --reply-dms-cooldown-hours."""
 
     def __init__(self):
         super().__init__()
         self.description = (
             "Read replies from users you greeted and continue the conversation "
             "(send YouTube link, ask about SoundCloud, send SoundCloud link). "
-            "Runs once every ~24h. Configure 'deepseek.yml' (and optionally 'slack.yml')."
+            "Runs every --reply-dms-cooldown-hours. Configure 'deepseek.yml' (and optionally 'slack.yml')."
         )
         self.arguments = [
             {
@@ -165,6 +193,7 @@ class ActionReplyDMs(Plugin):
         search_view = TabBarView(device).navigateToSearch()
         if not search_view.navigate_to_target(target, plugin):
             logger.warning(f"Could not open @{target}'s profile. Skipping.")
+            self._count_unreachable(storage, entry)
             return
         ProfileView(device, is_own_profile=False)
 
@@ -175,6 +204,7 @@ class ActionReplyDMs(Plugin):
         )
         if not message_button.exists(Timeout.SHORT):
             logger.warning(f"No Message button on @{target}'s profile. Skipping.")
+            self._count_unreachable(storage, entry)
             return
         message_button.click()
 
@@ -195,8 +225,24 @@ class ActionReplyDMs(Plugin):
             storage.remove_pending_reply(target)
         device.back()
 
+    def _count_unreachable(self, storage, entry):
+        target = entry.get("username")
+        misses = entry.get("unreachable", 0) + 1
+        if misses >= MAX_UNREACHABLE:
+            logger.info(
+                f"@{target} unreachable {misses} times (private or no DM). Dropping from queue."
+            )
+            storage.remove_pending_reply(target)
+        else:
+            storage.update_pending_reply(target, unreachable=misses)
+
+    def _classify(self, question, reply_text):
+        if is_obvious_yes(reply_text):
+            return YES
+        return classify_intent(self.cfg, question, reply_text)
+
     def _handle_greeted(self, device, storage, target, reply_text):
-        intent = classify_intent(self.cfg, Q_INTERESTED, reply_text)
+        intent = self._classify(Q_INTERESTED, reply_text)
         if intent == YES:
             msg = self._fill(self.cfg.get("youtube-messages"), DEFAULT_YT_MSG, self.cfg.get("youtube-link"))
             self._human_reply_pause(target)
@@ -212,7 +258,7 @@ class ActionReplyDMs(Plugin):
             self._handoff(target, reply_text, storage)
 
     def _handle_sent_youtube(self, device, storage, target, reply_text):
-        intent = classify_intent(self.cfg, Q_SOUNDCLOUD, reply_text)
+        intent = self._classify(Q_SOUNDCLOUD, reply_text)
         if intent == YES:
             msg = self._fill(self.cfg.get("soundcloud-messages"), DEFAULT_SC_MSG, self.cfg.get("soundcloud-link"))
             self._human_reply_pause(target)

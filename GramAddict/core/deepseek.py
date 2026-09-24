@@ -18,8 +18,9 @@ _CLASSIFIER_SYSTEM = (
     "You are a strict intent classifier for Instagram DM replies. "
     "Messages are usually in Spanish (Peru). "
     "Given a yes/no question about a user's message, answer with exactly ONE word: "
-    "YES, NO, or UNSURE. Answer UNSURE if the message is ambiguous, off-topic, a "
-    "question back, or needs a human. Output only the single word."
+    "YES, NO, or UNSURE. A short affirmative reply (e.g. 'sí', 'dale', 'claro', "
+    "👍, 🔥, 🙌) to our question counts as YES. Answer UNSURE if the message is "
+    "ambiguous, off-topic, a question back, or needs a human. Output only the single word."
 )
 
 

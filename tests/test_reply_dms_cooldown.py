@@ -81,3 +81,45 @@ def test_several_incoming_bubbles_are_joined_and_long_ones_stay_incoming():
         text_after_our_last_message([GREETING, SI_BRO, long_incoming], 720)
         == "Si bro / Hola! si claro pasame el link porfa"
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["👍", "👍🏽", "Si bro", "sí", "Dale!", "claro 🔥", "si bro 🔥🔥", "❤️", "ok", "Siii 🙌"],
+)
+def test_obvious_yes(text):
+    from GramAddict.plugins.action_reply_dms import is_obvious_yes
+
+    assert is_obvious_yes(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["", None, "no", "no gracias", "bro", "quien eres?", "si pero luego", "👎", "🤔", "ya lo escuché"],
+)
+def test_not_obvious_yes(text):
+    from GramAddict.plugins.action_reply_dms import is_obvious_yes
+
+    assert not is_obvious_yes(text)
+
+
+class _Store:
+    def __init__(self, entry):
+        self.entries = [entry]
+
+    def update_pending_reply(self, username, **fields):
+        self.entries[0].update(fields)
+
+    def remove_pending_reply(self, username):
+        self.entries = []
+
+
+def test_unreachable_user_is_dropped_after_three_visits():
+    entry = {"username": "privada"}
+    store = _Store(entry)
+    plugin = ActionReplyDMs()
+    plugin._count_unreachable(store, entry)
+    plugin._count_unreachable(store, entry)
+    assert store.entries and entry["unreachable"] == 2
+    plugin._count_unreachable(store, entry)
+    assert store.entries == []
