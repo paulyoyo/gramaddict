@@ -242,8 +242,15 @@ class SessionState:
                 logger.debug(session_info[10])
             return total_scraped
 
+    # The first session after run.py starts runs whatever the time; the
+    # working hours apply from then on. bot_flow clears this when it ends.
+    ignore_working_hours = True
+
     @staticmethod
     def inside_working_hours(working_hours, delta_sec):
+        if SessionState.ignore_working_hours:
+            return True, 0
+
         def time_in_range(start, end, x):
             if start <= end:
                 return start <= x <= end

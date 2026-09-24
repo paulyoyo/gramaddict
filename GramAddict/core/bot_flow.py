@@ -507,6 +507,7 @@ def start_bot(**kwargs):
             extra={"color": f"{Style.BRIGHT}{Fore.YELLOW}"},
         )
         pre_post_script(pre=False, path=configs.args.post_script)
+        SessionState.ignore_working_hours = False
 
         if configs.args.repeat and can_repeat(len(sessions), total_sessions):
             print_full_report(sessions, configs.args.scrape_to_file)
