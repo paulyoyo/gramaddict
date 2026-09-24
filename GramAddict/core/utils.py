@@ -48,7 +48,12 @@ def load_config(config: Config):
 
 
 def update_available():
-    response = requests.get("https://pypi.python.org/pypi/gramaddict/json")
+    try:
+        response = requests.get("https://pypi.python.org/pypi/gramaddict/json", timeout=10)
+    except requests.RequestException as e:
+        # offline or PyPI slow: not a reason to stop the bot from starting
+        logger.debug(f"Update check failed: {type(e).__name__}")
+        return False, None
     if response.ok:
         latest_version = response.json()["info"]["version"]
 

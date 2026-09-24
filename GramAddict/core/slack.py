@@ -4,6 +4,8 @@ from typing import Optional
 import requests
 import yaml
 
+from GramAddict.core.log import redact
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,5 +35,6 @@ def slack_send_text(webhook_url: str, text: str) -> bool:
         resp = requests.post(webhook_url, json={"text": text}, timeout=15)
         return resp.ok
     except Exception as e:
-        logger.error(f"Error sending Slack message: {e}")
+        # the webhook URL (its path) is the secret
+        logger.error(f"Error sending Slack message: {redact(e, webhook_url)}")
         return False

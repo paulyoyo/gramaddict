@@ -7,6 +7,7 @@ import requests
 import yaml
 from colorama import Fore, Style
 
+from GramAddict.core.log import redact
 from GramAddict.core.plugin_loader import Plugin
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,10 @@ def telegram_bot_send_text(bot_api_token, bot_chat_ID, text):
         parse_mode = "markdown"
         params = {"text": text, "chat_id": bot_chat_ID, "parse_mode": parse_mode}
         url = f"https://api.telegram.org/bot{bot_api_token}/{method}"
-        return requests.get(url, params=params).json()
+        return requests.get(url, params=params, timeout=15).json()
     except Exception as e:
-        logger.error(f"Error sending Telegram message: {e}")
+        # the bot token is part of the URL, and requests puts the URL in its errors
+        logger.error(f"Error sending Telegram message: {redact(e, bot_api_token)}")
         return None
 
 

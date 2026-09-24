@@ -150,3 +150,21 @@ def update_log_file_name(username: str):
     g_log_file_name = named_log_file_name
     g_file_handler = named_file_handler
     g_log_file_updated = True
+
+
+def redact(text, *secrets) -> str:
+    """Blank secrets (tokens, webhook URLs) before logging. For URLs the path is
+    blanked too: requests puts only the path in many error messages, and for a
+    Slack webhook or a Telegram bot URL the path is the secret."""
+    from urllib.parse import urlparse
+
+    text = str(text)
+    for secret in secrets:
+        if not secret:
+            continue
+        secret = str(secret)
+        text = text.replace(secret, "***")
+        path = urlparse(secret).path
+        if len(path) > 1:
+            text = text.replace(path, "/***")
+    return text
