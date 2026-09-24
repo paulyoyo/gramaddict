@@ -375,7 +375,8 @@ class CoreArguments(Plugin):
             {
                 "arg": "--disable-block-detection",
                 "help": "disable block detection",
-                "action": "store_false",
+                # store_true: `disable-block-detection: false` (or unset) keeps detection on
+                "action": "store_true",
             },
             {
                 "arg": "--pre-script",
