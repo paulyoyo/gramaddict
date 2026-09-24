@@ -750,13 +750,20 @@ def build_greeting(config: dict, first_name: str, source: Optional[str]) -> str:
     greeting = greeting.replace(" !", "!").replace(" ,", ",")
     greeting = " ".join(greeting.split()).strip()
     parts = [greeting]
-    source_ctx = config.get("source-context")
+    source_ctx = _one_of(config.get("source-context"))
     if source and source_ctx:
         src = source if source.startswith("@") else f"@{source}"
         parts.append(source_ctx.replace("{source}", src).strip())
-    mix_q = config.get("mix-question") or "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
+    mix_q = _one_of(config.get("mix-question")) or "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
     parts.append(mix_q.strip())
     return " ".join(p for p in parts if p)
+
+
+def _one_of(value):
+    """deepseek.yml parts can be one string or a list of variants to pick from."""
+    if isinstance(value, list):
+        return choice(value) if value else None
+    return value
 
 
 def _remember_full_name(greeting_sink, profile_data):
