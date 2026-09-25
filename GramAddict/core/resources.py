@@ -161,6 +161,7 @@ class ResourceID:
             f"{APP_ID}:id/row_thread_composer_button_send"
         )
         self.ROW_THREAD_COMPOSER_EDITTEXT = f"{APP_ID}:id/row_thread_composer_edittext"
+        self.DIRECT_THREAD_MESSAGE_LIST = f"{APP_ID}:id/message_list"
         self.ROW_USER_CONTAINER_BASE = f"{APP_ID}:id/row_user_container_base"
         self.ROW_USER_PRIMARY_NAME = f"{APP_ID}:id/row_user_primary_name"
         self.ROW_USER_TEXTVIEW = f"{APP_ID}:id/row_user_textview"

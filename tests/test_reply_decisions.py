@@ -219,3 +219,61 @@ def test_client_errors_and_missing_key_are_not_retried(monkeypatch):
     assert deepseek.classify_intent({"deepseek-api-key": "k"}, "q", "x") == ERROR
     assert len(calls) == 1
     assert deepseek.classify_intent({}, "q", "x") == ERROR
+
+
+# --- opening the thread: by link, never the wrong person's -------------------
+
+class FakeThreadScreen:
+    """`threads` = how many DM threads are stacked on screen; back() pops one."""
+
+    def __init__(self, threads=0, stuck=False):
+        self.threads, self.stuck, self.backs = threads, stuck, 0
+
+    def find(self, **kw):
+        return SimpleNamespace(exists=lambda *a, **k: self.threads > 0)
+
+    def back(self):
+        self.backs += 1
+        if not self.stuck:
+            self.threads = max(0, self.threads - 1)
+
+
+def _open_thread(monkeypatch, plugin, screen, link_opens=True):
+    plugin.ResourceID = m.resources("com.instagram.android")
+    opened = []
+
+    def fake_open(username):
+        opened.append(username)
+        if link_opens:
+            screen.threads += 1
+        return True
+
+    monkeypatch.setattr(m, "open_instagram_dm", fake_open)
+    monkeypatch.setattr(plugin, "_read_last_reply", lambda device: None)
+    store = _store()
+    plugin._process_user(screen, store, _queued(store)["ana"], None)
+    return opened, store
+
+
+def test_thread_opens_by_link_and_is_read(plugin, monkeypatch):
+    opened, store = _open_thread(monkeypatch, plugin, FakeThreadScreen())
+    assert opened == ["ana"]
+    assert "unreachable" not in _queued(store)["ana"]
+
+
+def test_thread_that_does_not_open_counts_as_a_miss(plugin, monkeypatch):
+    _, store = _open_thread(monkeypatch, plugin, FakeThreadScreen(), link_opens=False)
+    assert _queued(store)["ana"]["unreachable"] == 1
+
+
+def test_previous_thread_is_left_before_opening_the_next(plugin, monkeypatch):
+    screen = FakeThreadScreen(threads=1)
+    opened, _ = _open_thread(monkeypatch, plugin, screen)
+    assert opened == ["ana"] and screen.backs >= 1
+
+
+def test_stuck_on_a_previous_thread_never_reads_it(plugin, monkeypatch):
+    screen = FakeThreadScreen(threads=1, stuck=True)
+    opened, store = _open_thread(monkeypatch, plugin, screen)
+    assert opened == []  # nothing opened, nothing read or sent
+    assert "unreachable" not in _queued(store)["ana"]

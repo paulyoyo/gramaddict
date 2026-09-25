@@ -20,8 +20,8 @@ from GramAddict.core.plugin_loader import Plugin
 from GramAddict.core.resources import ClassName
 from GramAddict.core.resources import ResourceID as resources
 from GramAddict.core.slack import load_slack_config, slack_send_text
-from GramAddict.core.utils import get_value, open_instagram
-from GramAddict.core.views import ProfileView, TabBarView, UniversalActions
+from GramAddict.core.utils import get_value, open_instagram, open_instagram_dm
+from GramAddict.core.views import TabBarView, UniversalActions
 
 logger = logging.getLogger(__name__)
 
@@ -257,25 +257,22 @@ class ActionReplyDMs(Plugin):
         target = entry.get("username")
         stage = entry.get("stage", "greeted")
 
-        # Open ONLY this user's thread, via their profile — never the general
-        # inbox — so unrelated inbound messages are never opened or marked read.
-        search_view = TabBarView(device).navigateToSearch()
-        if not search_view.navigate_to_target(target, plugin):
-            logger.warning(f"Could not open @{target}'s profile. Skipping.")
+        # Open ONLY this user's thread, by its link — never the general inbox —
+        # so unrelated inbound messages are never opened or marked read.
+        thread = device.find(resourceId=self.ResourceID.DIRECT_THREAD_MESSAGE_LIST)
+        # A thread still on screen (a back() that only closed the keyboard) would
+        # pass for this user's: we'd read, and answer, the wrong person.
+        for _ in range(3):
+            if not thread.exists(Timeout.TINY):
+                break
+            device.back()
+        else:
+            logger.warning("Could not leave the previous DM thread. Skipping.")
+            return
+        if not open_instagram_dm(target) or not thread.exists(Timeout.LONG):
+            logger.warning(f"Could not open the DM thread with @{target}. Skipping.")
             self._count_unreachable(storage, entry)
             return
-        ProfileView(device, is_own_profile=False)
-
-        message_button = device.find(
-            classNameMatches=ClassName.BUTTON_OR_TEXTVIEW_REGEX,
-            enabled=True,
-            textMatches="Message",
-        )
-        if not message_button.exists(Timeout.SHORT):
-            logger.warning(f"No Message button on @{target}'s profile. Skipping.")
-            self._count_unreachable(storage, entry)
-            return
-        message_button.click()
 
         reply_text = self._read_last_reply(device)
         if not reply_text:

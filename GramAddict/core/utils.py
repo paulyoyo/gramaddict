@@ -212,9 +212,9 @@ def open_instagram_with_url(url) -> bool:
     return True
 
 
-def open_instagram_profile(username) -> bool:
-    """Open @username's profile through its instagram.com link, handled by the
-    Instagram app itself (-p): exact, and no search needed."""
+def open_instagram_link(url) -> bool:
+    """Open an instagram link in the Instagram app itself (-p): exact, and no
+    search needed."""
     result = adb(
         configs.device_id,
         "shell",
@@ -223,14 +223,24 @@ def open_instagram_profile(username) -> bool:
         "-a",
         "android.intent.action.VIEW",
         "-d",
-        device_quote(f"https://www.instagram.com/{username}/"),
+        device_quote(url),
         "-p",
         app_id,
     )
     if result.returncode != 0 or "Error" in result.stdout + result.stderr:
-        logger.debug(f"Could not open the profile link: {result.stderr.strip()}")
+        logger.debug(f"Could not open {url}: {result.stderr.strip()}")
         return False
     return True
+
+
+def open_instagram_profile(username) -> bool:
+    return open_instagram_link(f"https://www.instagram.com/{username}/")
+
+
+def open_instagram_dm(username) -> bool:
+    """Open the DM thread with @username, even when their profile has no
+    Message button (a private account we don't follow)."""
+    return open_instagram_link(f"https://ig.me/m/{username}")
 
 
 def kill_app(device, app_id):
