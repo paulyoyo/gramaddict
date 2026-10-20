@@ -147,6 +147,11 @@ def start_bot(**kwargs):
     following_now = None
 
     while True:
+        # Only the first session ignores the working hours. Cleared here, not
+        # at the end of the session, so the retry paths that `continue` early
+        # can't leave it on forever.
+        if sessions:
+            SessionState.ignore_working_hours = False
         # ponytail: first session starts instantly; time_delta only shifts later sessions
         set_time_delta(configs.args, first_session=not sessions)
         inside_working_hours, time_left = SessionState.inside_working_hours(
