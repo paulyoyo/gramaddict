@@ -328,6 +328,11 @@ class CoreArguments(Plugin):
                 "default": ["00.00-23.59"],
             },
             {
+                "arg": "--wait-for-working-hours",
+                "help": "don't run the first session right away; wait for the working hours like every other session",
+                "action": "store_true",
+            },
+            {
                 "arg": "--time-delta",
                 "nargs": None,
                 "help": "delta time to add or subtract from working hours",
