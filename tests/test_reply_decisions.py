@@ -219,11 +219,23 @@ def test_failed_soundcloud_send_keeps_the_person(plugin, monkeypatch):
 def test_bare_emoji_is_not_a_soundcloud_yes(plugin, monkeypatch):
     asked = []
     monkeypatch.setattr(m, "classify_intent", lambda cfg, q, text: asked.append(q) or UNSURE)
-    assert plugin._classify(Q_SOUNDCLOUD, "🔥🔥") == UNSURE
-    assert asked == [Q_SOUNDCLOUD]
+    assert plugin._classify(Q_SOUNDCLOUD, "🔥🔥") == NO
+    assert asked == []  # DeepSeek's prompt would call it a yes
     # ...but it still is to the mix question, and words still count on both
     assert plugin._classify(Q_INTERESTED, "🔥🔥") == YES
     assert plugin._classify(Q_SOUNDCLOUD, "si 🔥") == YES
+    # an emoji we don't know still goes to DeepSeek
+    assert plugin._classify(Q_SOUNDCLOUD, "🤔") == UNSURE
+
+
+def test_bare_fire_after_youtube_gets_a_thank_you(plugin, monkeypatch):
+    asked = []
+    monkeypatch.setattr(m, "classify_intent", lambda cfg, q, text: asked.append(q) or UNSURE)
+    store = _store("sent_youtube")
+    plugin._handle_sent_youtube(None, store, "ana", "🔥")
+    assert plugin.sent == [f"{m.DEFAULT_THANKS} {m.DEFAULT_SC_QUESTION}"]
+    assert _queued(store)["ana"]["stage"] == "sent_youtube"
+    assert asked == []
 
 
 def test_yes_replies_from_config_skip_deepseek(plugin, monkeypatch):
@@ -232,7 +244,7 @@ def test_yes_replies_from_config_skip_deepseek(plugin, monkeypatch):
     assert plugin._classify(Q_INTERESTED, "De una!!") == YES
     assert plugin._classify(Q_SOUNDCLOUD, "sale pe") == YES
     assert plugin._classify(Q_INTERESTED, "🫡") == YES
-    assert plugin._classify(Q_SOUNDCLOUD, "🫡") == UNSURE  # bare emoji rule still applies
+    assert plugin._classify(Q_SOUNDCLOUD, "🫡") == NO  # bare emoji: praise, gets a thank-you
     # the whole reply must match: a known phrase inside a longer reply goes to DeepSeek
     assert plugin._classify(Q_INTERESTED, "de una pero mañana") == UNSURE
 

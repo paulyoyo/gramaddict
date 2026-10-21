@@ -384,11 +384,21 @@ class ActionReplyDMs(Plugin):
         else:
             storage.update_pending_reply(target, unreachable=misses)
 
+    def _known_yes(self, reply_text) -> bool:
+        return is_obvious_yes(reply_text) or is_known_yes(reply_text, self.cfg.get("yes-replies"))
+
+    def _is_praise_emoji(self, reply_text) -> bool:
+        """A bare 🔥 / 🙌 (no words) that we know is positive."""
+        return not re.search(r"[^\W\d_]", reply_text or "") and self._known_yes(reply_text)
+
     def _classify(self, question, reply_text):
-        # A bare 🔥 after the YouTube link is praise, not "yes, I use SoundCloud".
-        has_words = re.search(r"[^\W\d_]", reply_text or "")
-        known = is_obvious_yes(reply_text) or is_known_yes(reply_text, self.cfg.get("yes-replies"))
-        if known and (question != Q_SOUNDCLOUD or has_words):
+        if self._is_praise_emoji(reply_text) and question == Q_SOUNDCLOUD:
+            # A bare 🔥 after the YouTube link is praise, not "yes, I use
+            # SoundCloud". NO here hands it to the courtesy check: they get a
+            # thank-you and the SoundCloud question again. Never sent to
+            # DeepSeek, whose prompt counts 🔥 as yes.
+            return NO
+        if self._known_yes(reply_text):
             return YES
         return classify_intent(self.cfg, question, reply_text)
 
@@ -441,7 +451,10 @@ class ActionReplyDMs(Plugin):
         """Thank people back when the reply is only a "gracias" or a compliment.
         True when the reply was dealt with here (including "keep, retry later");
         False when it isn't a courtesy and the caller decides."""
-        courtesy = classify_intent(self.cfg, Q_COURTESY, reply_text)
+        courtesy = (
+            YES if self._is_praise_emoji(reply_text)
+            else classify_intent(self.cfg, Q_COURTESY, reply_text)
+        )
         if courtesy == ERROR:
             logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
             return True
