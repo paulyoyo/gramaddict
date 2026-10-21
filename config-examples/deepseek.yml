@@ -11,6 +11,15 @@ model: "deepseek-chat"
 youtube-link: "https://youtu.be/your-mix"
 soundcloud-link: "https://soundcloud.com/you/your-mix"
 
+# Replies you've seen that mean "yes" but the bot sent to Slack as unsure.
+# The WHOLE reply must match (case and punctuation ignored), so "de una" matches
+# "De una!!" but not "de una pero mañana". Emoji-only entries work too.
+# Common ones (sí, dale, claro, ok, 👍, 🔥...) are already built in.
+# yes-replies:
+#   - "de una"
+#   - "sale pe"
+#   - "🫡"
+
 # All user-facing text is Spanish (Peru) — tú form (sigues/quieres/usas), no voseo.
 # --- Step 1: greeting templates (dj-greeting-mode) ---
 # {name} = the person's first name (from their profile). One is picked at random.

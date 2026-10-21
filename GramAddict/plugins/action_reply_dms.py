@@ -57,6 +57,19 @@ def is_obvious_yes(text) -> bool:
     )
 
 
+def _normalize(text) -> str:
+    """Lowercase words only, so "De una!!" matches "de una"; an emoji-only
+    text is kept as it is."""
+    words = re.findall(r"[^\W_]+", (text or "").lower())
+    return " ".join(words) or (text or "").strip()
+
+
+def is_known_yes(text, yes_replies) -> bool:
+    """yes-replies in deepseek.yml: whole replies you've seen mean yes."""
+    reply = _normalize(text)
+    return bool(reply) and any(reply == _normalize(known) for known in yes_replies or [])
+
+
 # Outgoing DM bubbles end ~2% from the right screen edge; incoming ones start
 # after the sender's avatar and end >=15% away (IG v300 dump, 720px wide).
 OUTGOING_RIGHT_GAP = 0.06
@@ -341,7 +354,8 @@ class ActionReplyDMs(Plugin):
     def _classify(self, question, reply_text):
         # A bare 🔥 after the YouTube link is praise, not "yes, I use SoundCloud".
         has_words = re.search(r"[^\W\d_]", reply_text or "")
-        if is_obvious_yes(reply_text) and (question != Q_SOUNDCLOUD or has_words):
+        known = is_obvious_yes(reply_text) or is_known_yes(reply_text, self.cfg.get("yes-replies"))
+        if known and (question != Q_SOUNDCLOUD or has_words):
             return YES
         return classify_intent(self.cfg, question, reply_text)
 

@@ -136,6 +136,17 @@ def test_bare_emoji_is_not_a_soundcloud_yes(plugin, monkeypatch):
     assert plugin._classify(Q_SOUNDCLOUD, "si 🔥") == YES
 
 
+def test_yes_replies_from_config_skip_deepseek(plugin, monkeypatch):
+    monkeypatch.setattr(m, "classify_intent", lambda cfg, q, text: UNSURE)
+    plugin.cfg = {**CFG, "yes-replies": ["de una", "sale pe", "🫡"]}
+    assert plugin._classify(Q_INTERESTED, "De una!!") == YES
+    assert plugin._classify(Q_SOUNDCLOUD, "sale pe") == YES
+    assert plugin._classify(Q_INTERESTED, "🫡") == YES
+    assert plugin._classify(Q_SOUNDCLOUD, "🫡") == UNSURE  # bare emoji rule still applies
+    # the whole reply must match: a known phrase inside a longer reply goes to DeepSeek
+    assert plugin._classify(Q_INTERESTED, "de una pero mañana") == UNSURE
+
+
 # --- run(): an aborted round doesn't start the cooldown ------------------------
 
 def test_aborted_round_does_not_record_the_cooldown(plugin, monkeypatch, tmp_path):
