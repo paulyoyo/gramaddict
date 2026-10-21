@@ -135,10 +135,28 @@ def replied_first(pending, unread_rows):
 # Questions posed to the DeepSeek classifier at each conversation stage.
 Q_INTERESTED = "Does this reply show the person is interested in listening to the mix?"
 Q_SOUNDCLOUD = "Does this reply say they use SoundCloud (or want the SoundCloud link)?"
+# Asked only when the answer to the stage's question isn't YES.
+Q_COURTESY = (
+    "Is this reply only a thank-you, compliment or friendly courtesy "
+    "(e.g. 'gracias', 'qué chévere', 'buenazo', '🔥'), without saying yes or no to our question?"
+)
 
 # Peruvian Spanish defaults (override in deepseek.yml).
 DEFAULT_YT_MSG = "¡Genial! Aquí está: {link} 🔥 ¿También usas SoundCloud?"
 DEFAULT_SC_MSG = "Aquí está la versión de SoundCloud: {link} 🎧"
+DEFAULT_THANKS = "¡Gracias a ti! 🙌"
+DEFAULT_SC_QUESTION = "Por cierto, ¿usas SoundCloud?"
+
+# After the SoundCloud link we only listen for a "thanks" (when their thread
+# shows up unread); after this long without one, the conversation is over.
+FOLLOWUP_HOURS = 72
+
+
+def _pick(value, default):
+    """deepseek.yml text can be one string or a list of variants."""
+    if isinstance(value, list):
+        return choice(value) if value else default
+    return value or default
 
 
 class ActionReplyDMs(Plugin):
@@ -220,12 +238,20 @@ class ActionReplyDMs(Plugin):
 
         queue = storage.get_pending_replies()
         # People with an unread thread have replied: check them first, and
-        # without waiting min_hours. Everyone else in random order.
-        replied, _ = replied_first(queue, self._scan_inbox(device)) if queue else ([], [])
+        # without waiting min_hours. Everyone else in random order, except
+        # those who already got both links: only an unread thread brings
+        # them back, and after FOLLOWUP_HOURS of silence they're done.
+        replied, rest = replied_first(queue, self._scan_inbox(device)) if queue else ([], [])
+        for entry in rest:
+            if self._followup_over(entry):
+                storage.remove_pending_reply(entry.get("username"))
+        queue = storage.get_pending_replies()
         due = [
             entry
             for entry in queue
-            if entry not in replied and self._hours_since(entry.get("sent_at")) >= min_hours
+            if entry not in replied
+            and (entry.get("stage") != "sent_soundcloud" or entry.get("recheck"))
+            and self._hours_since(entry.get("sent_at")) >= min_hours
         ]
         shuffle(replied)
         shuffle(due)
@@ -286,6 +312,11 @@ class ActionReplyDMs(Plugin):
             logger.warning(f"Could not open the DM thread with @{target}. Skipping.")
             self._count_unreachable(storage, entry)
             return
+        if stage == "sent_soundcloud":
+            # Opening the thread marks it read, so the inbox won't flag it
+            # again: from now on check them like everyone else, whatever
+            # happens next (crash, failed send, media-only reply).
+            storage.update_pending_reply(target, recheck=True)
 
         reply_text = self._read_last_reply(device)
         if not reply_text:
@@ -299,6 +330,8 @@ class ActionReplyDMs(Plugin):
             self._handle_greeted(device, storage, target, reply_text)
         elif stage == "sent_youtube":
             self._handle_sent_youtube(device, storage, target, reply_text)
+        elif stage == "sent_soundcloud":
+            self._handle_sent_soundcloud(device, storage, target, reply_text)
         else:
             logger.warning(f"Unknown stage {stage!r} for @{target}; dropping.")
             storage.remove_pending_reply(target)
@@ -369,11 +402,13 @@ class ActionReplyDMs(Plugin):
                 storage.update_pending_reply(target, stage="sent_youtube", sent_at=self._now())
             else:
                 logger.warning(f"Could not send YouTube message to @{target}. Keeping in queue.")
+        elif intent == ERROR:
+            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
+        elif self._answer_courtesy(device, storage, target, reply_text, "greeted"):
+            pass
         elif intent == NO:
             logger.info(f"@{target} not interested. Dropping.")
             storage.remove_pending_reply(target)
-        elif intent == ERROR:
-            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
         else:
             self._handoff(target, reply_text, storage)
 
@@ -383,17 +418,61 @@ class ActionReplyDMs(Plugin):
             msg = self._fill(self.cfg.get("soundcloud-messages"), DEFAULT_SC_MSG, self.cfg.get("soundcloud-link"))
             self._human_reply_pause(target)
             if msg and self._send_reply(device, msg):
-                logger.info(f"Sent SoundCloud link to @{target}. Done.", extra={"color": f"{Fore.GREEN}"})
-                storage.remove_pending_reply(target)
+                logger.info(f"Sent SoundCloud link to @{target}.", extra={"color": f"{Fore.GREEN}"})
+                # Kept a little longer, only to thank them if they thank us.
+                storage.update_pending_reply(target, stage="sent_soundcloud", sent_at=self._now())
             else:
                 logger.warning(f"Could not send SoundCloud message to @{target}. Keeping in queue.")
+        elif intent == ERROR:
+            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
+        elif self._answer_courtesy(device, storage, target, reply_text, "sent_youtube"):
+            pass
         elif intent == NO:
             logger.info(f"@{target} doesn't use SoundCloud. Done.")
             storage.remove_pending_reply(target)
-        elif intent == ERROR:
-            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
         else:
             self._handoff(target, reply_text, storage)
+
+    def _handle_sent_soundcloud(self, device, storage, target, reply_text):
+        if not self._answer_courtesy(device, storage, target, reply_text, "sent_soundcloud"):
+            self._handoff(target, reply_text, storage)
+
+    def _answer_courtesy(self, device, storage, target, reply_text, stage) -> bool:
+        """Thank people back when the reply is only a "gracias" or a compliment.
+        True when the reply was dealt with here (including "keep, retry later");
+        False when it isn't a courtesy and the caller decides."""
+        courtesy = classify_intent(self.cfg, Q_COURTESY, reply_text)
+        if courtesy == ERROR:
+            logger.warning(f"Could not classify @{target}'s reply now. Keeping in queue.")
+            return True
+        if courtesy != YES:
+            return False
+        entry = next((e for e in storage.get_pending_replies() if e.get("username") == target), {})
+        if entry.get("thanked") == stage:
+            # We already thanked them at this point: don't loop on thank-yous.
+            logger.info(f"@{target} replied with another courtesy. Done.")
+            storage.remove_pending_reply(target)
+            return True
+        msg = _pick(self.cfg.get("thanks-messages"), DEFAULT_THANKS)
+        if stage == "sent_youtube":
+            msg += " " + _pick(self.cfg.get("soundcloud-question"), DEFAULT_SC_QUESTION)
+        self._human_reply_pause(target)
+        if not self._send_reply(device, msg):
+            logger.warning(f"Could not send a thank-you to @{target}. Keeping in queue.")
+            return True
+        logger.info(f"Thanked @{target} back.", extra={"color": f"{Fore.GREEN}"})
+        if stage == "sent_soundcloud":
+            storage.remove_pending_reply(target)
+        else:
+            storage.update_pending_reply(target, thanked=stage, sent_at=self._now())
+        return True
+
+    def _followup_over(self, entry) -> bool:
+        """Called only for people whose thread isn't unread."""
+        return (
+            entry.get("stage") == "sent_soundcloud"
+            and self._hours_since(entry.get("sent_at")) >= FOLLOWUP_HOURS
+        )
 
     def _handoff(self, target, reply_text, storage):
         logger.info(

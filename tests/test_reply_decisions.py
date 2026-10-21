@@ -110,12 +110,102 @@ def test_unsure_without_slack_keeps_the_person(plugin, monkeypatch):
 
 # --- sent_youtube: "do you use SoundCloud?" -----------------------------------
 
-def test_soundcloud_yes_sends_the_link_and_finishes(plugin, monkeypatch):
+def test_soundcloud_yes_sends_the_link_and_waits_for_a_thanks(plugin, monkeypatch):
     _answer(monkeypatch, YES)
     store = _store("sent_youtube")
     plugin._handle_sent_youtube(None, store, "ana", "sí uso soundcloud")
     assert plugin.sent == ["SC https://soundcloud.com/mix"]
+    assert _queued(store)["ana"]["stage"] == "sent_soundcloud"
+
+
+# --- courtesy: "gracias", "qué chévere" ---------------------------------------
+
+
+def _courtesy(monkeypatch, main):
+    """The stage question answers `main`; the courtesy question answers YES."""
+    monkeypatch.setattr(
+        m, "classify_intent", lambda cfg, q, text: YES if q == m.Q_COURTESY else main
+    )
+
+
+def test_thanks_after_greeting_is_thanked_back_and_kept(plugin, monkeypatch):
+    _courtesy(monkeypatch, NO)
+    plugin.cfg = {**CFG, "thanks-messages": ["Gracias a ti!"]}
+    store = _store("greeted")
+    plugin._handle_greeted(None, store, "ana", "gracias por escribir")
+    assert plugin.sent == ["Gracias a ti!"]
+    assert _queued(store)["ana"]["stage"] == "greeted"
+    assert _queued(store)["ana"]["thanked"] == "greeted"
+
+
+def test_thanks_after_youtube_also_asks_about_soundcloud(plugin, monkeypatch):
+    _courtesy(monkeypatch, NO)
+    plugin.cfg = {**CFG, "thanks-messages": ["Gracias!"], "soundcloud-question": ["Usas SC?"]}
+    store = _store("sent_youtube")
+    plugin._handle_sent_youtube(None, store, "ana", "gracias 🔥")
+    assert plugin.sent == ["Gracias! Usas SC?"]
+    assert _queued(store)["ana"]["stage"] == "sent_youtube"
+
+
+def test_second_courtesy_in_a_stage_ends_without_another_thanks(plugin, monkeypatch):
+    _courtesy(monkeypatch, UNSURE)
+    store = _store("sent_youtube")
+    store.update_pending_reply("ana", thanked="sent_youtube")
+    plugin._handle_sent_youtube(None, store, "ana", "gracias de nuevo")
+    assert plugin.sent == []
     assert "ana" not in _queued(store)
+
+
+def test_thanks_after_soundcloud_is_thanked_once_and_done(plugin, monkeypatch):
+    _courtesy(monkeypatch, NO)
+    store = _store("sent_soundcloud")
+    plugin._handle_sent_soundcloud(None, store, "ana", "buenazo, gracias!")
+    assert plugin.sent == [m.DEFAULT_THANKS]
+    assert "ana" not in _queued(store)
+
+
+def test_other_reply_after_soundcloud_goes_to_slack(plugin, monkeypatch):
+    _answer(monkeypatch, NO)
+    calls = _slack(monkeypatch, ok=True)
+    store = _store("sent_soundcloud")
+    plugin._handle_sent_soundcloud(None, store, "ana", "cuándo tocas en Lima?")
+    assert plugin.sent == [] and len(calls) == 1
+    assert "ana" not in _queued(store)
+
+
+def test_courtesy_check_failing_never_drops_a_no(plugin, monkeypatch):
+    monkeypatch.setattr(
+        m, "classify_intent", lambda cfg, q, text: ERROR if q == m.Q_COURTESY else NO
+    )
+    store = _store("greeted")
+    plugin._handle_greeted(None, store, "ana", "gracias")
+    assert plugin.sent == [] and "ana" in _queued(store)
+
+
+def test_after_soundcloud_only_unread_threads_are_checked_and_silence_expires(
+    plugin, monkeypatch, tmp_path
+):
+    old = "2020-01-01 00:00:00.000000"
+    store = InMemoryStore()
+    store.account_path = str(tmp_path)
+    store.enqueue_pending_reply("silent_old", stage="sent_soundcloud", sent_at=old)
+    store.enqueue_pending_reply("replied_old", stage="sent_soundcloud", sent_at=old, full_name="Replied Old")
+    store.enqueue_pending_reply("silent_new", stage="sent_soundcloud")
+    store.enqueue_pending_reply("waiting", stage="greeted", sent_at=old)
+    plugin.args = SimpleNamespace(
+        app_id="com.instagram.android", username="me", reply_dms_cooldown_hours="0",
+        reply_dms_min_hours="0", reply_dms_limit="10",
+    )
+    monkeypatch.setattr(m, "load_deepseek_config", lambda u: CFG)
+    monkeypatch.setattr(m, "load_slack_config", lambda u: None)
+    monkeypatch.setattr(plugin, "_scan_inbox", lambda device: [("Replied Old", None)])
+    checked = []
+    monkeypatch.setattr(plugin, "_process_user", lambda d, s, entry, p: checked.append(entry["username"]))
+    plugin.run(None, SimpleNamespace(args=plugin.args), store, None, None, "reply-dms")
+
+    assert sorted(checked) == ["replied_old", "waiting"]  # silent_new isn't opened
+    assert "silent_old" not in _queued(store)  # 72 h of silence: done
+    assert "replied_old" in _queued(store)  # replied late: never expired
 
 
 def test_failed_soundcloud_send_keeps_the_person(plugin, monkeypatch):

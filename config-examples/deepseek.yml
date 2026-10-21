@@ -64,3 +64,17 @@ soundcloud-messages:
   - "Ahí va el de SoundCloud: {link} 🔥"
   - "Te lo dejo en SoundCloud: {link} 🎶 Gracias por escuchar!"
   - "Por aquí en SoundCloud: {link} 🙌 Cualquier cosa me dices!"
+
+# --- Courtesy: when someone only says thanks or pays a compliment ("gracias",
+# "qué chévere", 🔥) instead of answering, DeepSeek detects it and the bot
+# thanks them back with one of these. Once per step, so it never loops.
+thanks-messages:
+  - "Gracias a ti! 🙌"
+  - "Gracias por la buena onda! 🎶"
+  - "De nada, un abrazo! 🔥"
+  - "Qué bueno que te guste! 🙏"
+# Added after the thank-you when they got the YouTube link but didn't answer
+# about SoundCloud yet.
+soundcloud-question:
+  - "Por cierto, usas SoundCloud?"
+  - "Y tú, estás en SoundCloud?"
