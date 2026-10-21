@@ -85,6 +85,22 @@ def reply_dms_first(jobs_list):
     return ["reply-dms"] + [job for job in jobs_list if job != "reply-dms"]
 
 
+def add_mid_session_reply_check(jobs_list):
+    """People shouldn't wait a whole session for an answer: after the first
+    reply-dms, check again at a random point later on, never right after
+    another reply-dms."""
+    if len(jobs_list) < 2 or jobs_list[0] != "reply-dms":
+        return jobs_list
+    at = random.randint(2, len(jobs_list))
+    return jobs_list[:at] + ["reply-dms"] + jobs_list[at:]
+
+
+def reply_check_before_stopping(jobs_list, last_job) -> bool:
+    """When the working hours end, check replies once more, unless reply-dms
+    isn't enabled, nothing ran this session, or it was the last job."""
+    return "reply-dms" in jobs_list and last_job not in (None, "reply-dms")
+
+
 def start_bot(**kwargs):
     # Logging initialization
     logger = logging.getLogger(__name__)
@@ -383,7 +399,8 @@ def start_bot(**kwargs):
             jobs_list.remove("slack-reports")
             if configs.args.slack_reports:
                 slack_reports_at_end = True
-        jobs_list = reply_dms_first(jobs_list)
+        jobs_list = add_mid_session_reply_check(reply_dms_first(jobs_list))
+        last_job = None
         print_limits = True
         unfollow_jobs = [x for x in jobs_list if "unfollow" in x]
         logger.info(
@@ -394,7 +411,8 @@ def start_bot(**kwargs):
         show_ending_conditions()
         if not configs.args.debug:
             countdown(10, "Bot will start in: ")
-        for plugin in jobs_list:
+        for i, plugin in enumerate(jobs_list):
+            reply_check_ahead = "reply-dms" in jobs_list[i + 1:]
             inside_working_hours, time_left = SessionState.inside_working_hours(
                 configs.args.working_hours, configs.args.time_delta_session
             )
@@ -404,6 +422,24 @@ def start_bot(**kwargs):
                     extra={"color": f"{Fore.CYAN}"},
                 )
                 break
+            if plugin == "reply-dms":
+                # Skipped jobs can leave two checks back to back.
+                if last_job == "reply-dms":
+                    continue
+                # Replies aren't outreach: the session's limits don't stop them.
+                if not back_to_own_profile(
+                    device, profile_view, tab_bar_view, session_state.my_username
+                ):
+                    break
+                logger.info(
+                    f"Current active-job: {plugin}",
+                    extra={"color": f"{Style.BRIGHT}{Fore.BLUE}"},
+                )
+                configs.actions[plugin].run(
+                    device, configs, storage, sessions, filters, plugin
+                )
+                last_job = plugin
+                continue
             (
                 active_limits_reached,
                 unfollow_limit_reached,
@@ -412,6 +448,8 @@ def start_bot(**kwargs):
                 limit_type=session_state.Limit.ALL, output=print_limits
             )
             if actions_limit_reached:
+                if reply_check_ahead:
+                    continue  # still answer replies before ending
                 logger.info(
                     "At last one of these limits has been reached: interactions/successful or scraped. Ending session.",
                     extra={"color": f"{Fore.CYAN}"},
@@ -441,6 +479,7 @@ def start_bot(**kwargs):
                     device, configs, storage, sessions, filters, plugin
                 )
                 unfollow_jobs.remove(plugin)
+                last_job = plugin
                 print_limits = True
             else:
                 if active_limits_reached:
@@ -448,7 +487,7 @@ def start_bot(**kwargs):
                         f"Can't perform {plugin} job because a limit for active-jobs has been reached."
                     )
                     print_limits = None
-                    if unfollow_jobs:
+                    if unfollow_jobs or reply_check_ahead:
                         continue
                     else:
                         logger.info(
@@ -468,7 +507,28 @@ def start_bot(**kwargs):
                 configs.actions[plugin].run(
                     device, configs, storage, sessions, filters, plugin
                 )
+                last_job = plugin
                 print_limits = True
+
+        # Working hours over (mid-job or between jobs): answer anyone still
+        # waiting before the bot stops for the night.
+        inside_working_hours, _ = SessionState.inside_working_hours(
+            configs.args.working_hours, configs.args.time_delta_session
+        )
+        if (
+            not inside_working_hours
+            and reply_check_before_stopping(jobs_list, last_job)
+            and back_to_own_profile(
+                device, profile_view, tab_bar_view, session_state.my_username
+            )
+        ):
+            logger.info(
+                "Checking DM replies one last time before stopping.",
+                extra={"color": f"{Style.BRIGHT}{Fore.BLUE}"},
+            )
+            configs.actions["reply-dms"].run(
+                device, configs, storage, sessions, filters, "reply-dms"
+            )
 
         # save the session in sessions.json
         session_state.finishTime = datetime.now()

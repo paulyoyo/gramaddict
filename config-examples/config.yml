@@ -95,11 +95,12 @@ dj-greeting-mode: false # set to true to activate the AI DM greeting/campaign (n
 # Step 2+ — once a day, check greeted users for replies. DeepSeek classifies interest; the bot
 # sends your YouTube link, asks about SoundCloud, then sends the SoundCloud link. Unsure -> Slack.
 # Uncomment reply-dms to enable the AI reply job (value-based flag: comment out to disable).
-# It runs first in each session, before new outreach.
+# It runs first in each session, again at a random point later in the session (never twice in a
+# row), and once more when the working hours end. Session limits don't stop it.
 # reply-dms: true
 # reply-dms-min-hours: 3 # wait at least this many hours after the last message before checking
-# reply-dms-limit: 10 # max users to process per session (number or range, e.g. 10-15)
-# reply-dms-cooldown-hours: 20-28 # hours between reply checks; 0 = every session
+# reply-dms-limit: 10 # max users to process per run (number or range, e.g. 10-15)
+# reply-dms-cooldown-hours: 20-28 # hours between reply checks; 0 = every time it comes up
 # Unread DM threads are checked first (read from the inbox list, no thread is opened).
 
 ## Special actions

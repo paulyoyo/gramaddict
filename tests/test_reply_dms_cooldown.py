@@ -54,6 +54,32 @@ def test_reply_dms_runs_before_outreach_jobs():
     assert reply_dms_first(["blogger-followers"]) == ["blogger-followers"]
 
 
+def test_second_reply_check_is_random_and_never_back_to_back():
+    from GramAddict.core.bot_flow import add_mid_session_reply_check
+
+    jobs = ["reply-dms", "blogger-followers", "blogger-post-likers", "hashtag-likers"]
+    spots = set()
+    for _ in range(200):
+        out = add_mid_session_reply_check(jobs)
+        assert out[0] == "reply-dms" and out.count("reply-dms") == 2
+        assert all(not (a == b == "reply-dms") for a, b in zip(out, out[1:]))
+        spots.add(out.index("reply-dms", 1))
+    assert spots == {2, 3, 4}  # after the 1st, 2nd or last outreach job
+
+    assert add_mid_session_reply_check(["reply-dms"]) == ["reply-dms"]
+    assert add_mid_session_reply_check(["blogger-followers"]) == ["blogger-followers"]
+
+
+def test_reply_check_before_stopping_never_twice_in_a_row():
+    from GramAddict.core.bot_flow import reply_check_before_stopping
+
+    jobs = ["reply-dms", "blogger-followers", "reply-dms"]
+    assert reply_check_before_stopping(jobs, "blogger-followers") is True
+    assert reply_check_before_stopping(jobs, "reply-dms") is False
+    assert reply_check_before_stopping(jobs, None) is False  # nothing ran yet
+    assert reply_check_before_stopping(["blogger-followers"], "blogger-followers") is False
+
+
 # Bounds from a real IG v300 thread dump (720px wide): our greeting, then "Si bro".
 GREETING = ("Holi Stick! Vi que sigues a @miabotanicclub.pe", 704)
 SI_BRO = ("Si bro", 242)
