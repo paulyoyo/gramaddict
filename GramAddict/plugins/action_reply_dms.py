@@ -70,17 +70,19 @@ def is_known_yes(text, yes_replies) -> bool:
     return bool(reply) and any(reply == _normalize(known) for known in yes_replies or [])
 
 
-# Outgoing DM bubbles end ~2% from the right screen edge; incoming ones start
-# after the sender's avatar and end >=15% away (IG v300 dump, 720px wide).
-OUTGOING_RIGHT_GAP = 0.06
+# Outgoing DM bubbles end ~2% from the right screen edge (~7% in a message
+# request "invite" thread); incoming ones start after the sender's avatar and
+# end >=15% away (IG v300 dumps, 720px wide).
+OUTGOING_RIGHT_GAP = 0.10
 
 
-def text_after_our_last_message(bubbles, screen_width):
+def text_after_our_last_message(bubbles, screen_width, is_ours=lambda text: False):
     """bubbles: [(text, right_edge_px)] top to bottom. Returns the incoming
-    texts after our last outgoing bubble, joined, or None if there are none."""
+    texts after our last outgoing bubble, joined, or None if there are none.
+    is_ours(text) marks a bubble as ours whatever its position."""
     incoming = []
     for text, right in bubbles:
-        if screen_width - right < screen_width * OUTGOING_RIGHT_GAP:
+        if screen_width - right < screen_width * OUTGOING_RIGHT_GAP or is_ours(text):
             incoming = []  # ours: anything before it was already answered
         else:
             incoming.append(text)
@@ -145,6 +147,8 @@ Q_COURTESY = (
 DEFAULT_YT_MSG = "¡Genial! Aquí está: {link} 🔥 ¿También usas SoundCloud?"
 DEFAULT_SC_MSG = "Aquí está la versión de SoundCloud: {link} 🎧"
 DEFAULT_THANKS = "¡Gracias a ti! 🙌"
+# Same default as build_greeting in core/interaction.py.
+DEFAULT_MIX_QUESTION = "Acabo de sacar un nuevo mix, ¿quieres escucharlo?"
 DEFAULT_SC_QUESTION = "Por cierto, ¿usas SoundCloud?"
 
 # After the SoundCloud link we only listen for a "thanks" (when their thread
@@ -522,7 +526,17 @@ class ActionReplyDMs(Plugin):
             text = bubble.get_text(error=False)
             if text:
                 visible.append((text, bubble.get_bounds()["right"]))
-        return text_after_our_last_message(visible, width)
+        return text_after_our_last_message(visible, width, self._is_our_message)
+
+    def _is_our_message(self, text) -> bool:
+        """Every greeting ends with a mix-question and every link message holds
+        one of our links: text no one else writes, so a bubble with it is ours."""
+        mix = self.cfg.get("mix-question") or DEFAULT_MIX_QUESTION
+        ours = (mix if isinstance(mix, list) else [mix]) + [
+            self.cfg.get("youtube-link"),
+            self.cfg.get("soundcloud-link"),
+        ]
+        return any(p and p.strip() and p.strip() in (text or "") for p in ours)
 
     def _human_reply_pause(self, target):
         # Replying in <1s is the one evidence-backed bot tell (velocity detection).

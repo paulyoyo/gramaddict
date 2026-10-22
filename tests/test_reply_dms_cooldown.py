@@ -99,6 +99,30 @@ def test_our_own_last_message_is_not_a_reply():
     assert text_after_our_last_message([], 720) is None
 
 
+def test_our_bubbles_in_a_message_request_thread_are_ours():
+    from GramAddict.plugins.action_reply_dms import text_after_our_last_message
+
+    # IG v300 "invite" thread (720px): our greeting and YouTube link end at 672.
+    greeting = ("Hola hola Manu🌞 🙌 Vi que sigues discos Estrené mix hace poco, te gustaría escucharlo?", 672)
+    link = ("Aquí tienes: https://youtu.be/x 🎧 Usas SoundCloud también?", 672)
+    assert text_after_our_last_message([greeting, link], 720) is None
+
+
+def test_bubble_with_our_text_is_ours_wherever_it_is():
+    from GramAddict.plugins.action_reply_dms import ActionReplyDMs, text_after_our_last_message
+
+    plugin = ActionReplyDMs()
+    plugin.cfg = {"mix-question": ["Estrené mix hace poco, te gustaría escucharlo?"],
+                  "youtube-link": "https://youtu.be/x"}
+    odd_place = ("Hola Ana! Estrené mix hace poco, te gustaría escucharlo?", 500)
+    assert text_after_our_last_message([odd_place], 720, plugin._is_our_message) is None
+    assert text_after_our_last_message([odd_place, SI_BRO], 720, plugin._is_our_message) == "Si bro"
+    plugin.cfg = {}  # no mix-question configured: the built-in default is ours
+    default = ("Hola! Acabo de sacar un nuevo mix, ¿quieres escucharlo?", 500)
+    assert plugin._is_our_message(default[0]) is True
+    assert plugin._is_our_message("Si bro") is False
+
+
 def test_several_incoming_bubbles_are_joined_and_long_ones_stay_incoming():
     from GramAddict.plugins.action_reply_dms import text_after_our_last_message
 
